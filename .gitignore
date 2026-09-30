@@ -1,0 +1,22 @@
+IyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CiMg2KPYr9mI2KfYqiDYqNmG2KfYoSDYp9mE2KjZhtinA0KIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CgojINiz2YPYsdmK2KjYqiDYp9mE2KjZhtinA0KcGFja2FnZV9yZWxlYXNlLnBzMQpjb25maWd1cmVfcmVzdGF1cmFudC5iYXQKc3luY19hbmRfcGFja2FnZS5wczEKCiMg2YXYrZmE2K8g2KfZhNm
+I2LHYp9i32Kkg2KfZhNiu2KfYtNmKA0KcmVsZWFzZXMvCioucmlwCiMgKNmF2KfY
+rdmK2K8g2YXYriBwcmludGVyX2JyaWRnZV9jbGllbnQuemlwINmB2YrINin2YTZhdiz2KrZiNiv2Ykg2KbZgdi5KQoKIyDZhdmE2YHYp9iqINin2YTYqNmK2KA
+gprivate_key.pem
+*.key
+.env
+.env.local
+.env.production
+
+# Supabase schema (للرفع اليدوي فقط)
+*.sql
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
