@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>نقطة البيع والكاشير | مطعم فحمة ودخان</title>
+  
+  <!-- PWA Configuration for Cashier -->
+  <link rel="manifest" href="cashier-manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="كاشير فحمة" />
+  <meta name="theme-color" content="#10b981" />
+  <link rel="apple-touch-icon" href="logo.svg" />
+
+  <!-- Tailwind CSS (Local Fallback + CDN) -->
+  <link rel="stylesheet" href="tailwind.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* Sleek custom scrollbars for POS */
+    .pos-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+    .pos-scroll::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); border-radius: 9999px; }
+    .pos-scroll::-webkit-scrollbar-thumb { background: rgba(225, 29, 72, 0.4); border-radius: 9999px; }
+    .pos-scroll::-webkit-scrollbar-thumb:hover { background: rgba(225, 29, 72, 0.8); }
+
+    /* ضمان ظهور شريط أقسام الكاشير دائماً */
+    #cashier-main-nav {
+      display: flex !important;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .csh-nav-tab {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+  </style>
+  <script>
+    function togglePasswordVisibility(inputId, btn) {
+      try {
+        var inp = document.getElementById(inputId);
+        if (!inp) return;
+        if (inp.type === 'password') {
+          inp.type = 'text';
+          if (btn) { btn.innerHTML = '🔒'; btn.title = 'إخفاء كلمة المرور'; }
+        } else {
+          inp.type = 'password';
+          if (btn) { btn.innerHTML = '👁️'; btn.title = 'إظهار كلمة المرور'; }
+        }
+      } catch (e) {
+        console.error('togglePasswordVisibility error:', e);
+      }
+    }
+  </script>
+  <!-- التحقق الفوري والسريع من جلسة الكاشير قبل رسم الصفحة لمنع أي وميض أو تضارب -->
+  <script>
+    (function() {
+      try {
+        var restId = 'fahma_dokhan';
+        var p = new URLSearchParams(window.location.search);
+        if (p.get('rest')) restId = p.get('rest').toLowerCase();
+        var keys = [
+          'smart_emenu_active_session',
+          'cashier_session',
+          'smart_emenu_' + restId + '_session',
+          'smart_emenu_session',
+          'admin_session',
+          'smart_emenu_fahma_dokhan_session'
+        ];
+        var isAuth = false;
+        for (var i = 0; i < keys.length; i++) {
+          var raw = sessionStorage.getItem(keys[i]) || localStorage.getItem(keys[i]);
+          if (raw) {
+            try {
+              var s = JSON.parse(raw);
+              if (s && (s.role === 'cashier' || s.role === 'admin' || s.role === 'super_admin')) {
+                isAuth = true;
+                break;
+              }
+            } catch(e) {}
+          }
+        }
+        if (!isAuth && (sessionStorage.getItem('is_super_admin_logged_in') === 'true' || localStorage.getItem('is_super_admin_logged_in') === 'true')) {
+          isAuth = true;
+        }
+        if (!isAuth) {
+          window.location.replace('login.html?role=cashier&rest=' + encodeURIComponent(restId));
+        }
+      } catch(e) {}
+    })();
+
+    document.addEventListener('DOMContentLoaded', function() {
+      try {
+        var restId = 'fahma_dokhan';
+        var p = new URLSearchParams(window.location.search);
+        if (p.get('rest')) restId = p.get('rest').toLowerCase();
+        document.querySelectorAll('a[data-dyn-page]').forEach(function(a) {
+          var page = a.getAttribute('data-dyn-page');
+          if (page) a.href = page + '?rest=' + encodeURIComponent(restId);
+        });
+      } catch(e) {}
+    });
+  </script>
+</head>
+<body class="bg-[#090d16] text-slate-100 min-h-screen">
+
+  <!-- ===================================================================
+       1. شاشة تسجيل دخول الكاشير (Cashier Login View)
+       =================================================================== -->
+  <div id="cashier-login-view" class="hidden min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-center">
+      
+      <div class="w-24 h-16 rounded-2xl bg-slate-950 p-2 mx-auto border border-slate-800 shadow-xl flex items-center justify-center">
+        <img src="logo.svg" alt="لوجو المطعم" class="w-full h-full object-contain restaurant-logo-img" />
+      </div>
+
+      <div class="text-center space-y-2">
+        <h2 class="text-xl font-black text-white">تسجيل دخول الكاشير</h2>
+        <p class="text-xs text-slate-400">أدخل اسم المستخدم وكلمة المرور للمتابعة</p>
+      </div>
+
+      <!-- User & Password Form -->
+      <form id="cashier-login-form" onsubmit="handleCashierLogin(event)" autocomplete="off" class="space-y-3 text-right">
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">اسم المستخدم:</label>
+          <input type="text" id="cashier-username-input" name="username" autocomplete="off" placeholder="اسم المستخدم" class="w-full text-right text-sm font-bold bg-slate-950 border border-slate-700 text-white rounded-2xl py-3 px-4 focus:outline-none focus:border-rose-500" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">كلمة المرور:</label>
+          <div class="relative">
+            <input type="password" id="cashier-pin-input" name="password" autocomplete="new-password" maxlength="32" placeholder="••••••••" class="w-full text-center tracking-[0.25em] text-xl font-black bg-slate-950 border border-slate-700 text-rose-400 rounded-2xl py-3 px-10 focus:outline-none focus:border-rose-500 font-mono" />
+            <button type="button" onclick="togglePasswordVisibility('cashier-pin-input', this)" class="absolute left-3.5 top-3.5 text-slate-400 hover:text-white text-lg focus:outline-none" title="إظهار / إخفاء الرمز">
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <!-- Remember Me Checkbox -->
+        <div class="flex items-center justify-between py-1">
+          <label class="flex items-center gap-2 text-xs text-slate-300 font-bold cursor-pointer">
+            <input type="checkbox" id="cashier-remember-me" class="w-4 h-4 accent-rose-600 rounded cursor-pointer" />
+            <span>حفظ اسم المستخدم وكلمة المرور 🔒</span>
+          </label>
+        </div>
+
+        <p id="cashier-login-error" class="text-xs text-rose-500 font-bold hidden text-center"></p>
+
+        <button type="submit" id="cashier-login-btn" class="w-full py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-600/30 transition active:scale-95">
+          تسجيل الدخول 🚀
+        </button>
+      </form>
+
+      <div class="pt-4 border-t border-slate-800 flex justify-between items-center text-xs text-slate-400">
+        <a href="index.html" class="hover:text-rose-400">← منيو الزبائن</a>
+        <a href="captain.html" class="text-amber-400 hover:underline">تطبيق الكابتن 👨‍🍳</a>
+      </div>
+
+      <div class="pt-2 text-center border-t border-slate-800/60">
+        <span class="text-[11px] text-slate-400">📞 الدعم الفني: <a href="tel:07702265652" class="text-rose-400 font-bold font-mono hover:underline">07702265652</a></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       2. شاشة الكاشير الرئيسية (Cashier Workspace)
+       =================================================================== -->
+  <div id="cashier-workspace-view" class="hidden min-h-screen flex flex-col">
+    
+    <!-- Top Header with Integrated Modern Navigation Bar -->
+    <header class="glass-header sticky top-0 z-40 px-3 sm:px-5 py-2.5 flex items-center justify-between gap-3 border-b border-slate-800 bg-[#090d16]/95 backdrop-blur-md">
+      
+      <!-- Brand Logo & Restaurant Info -->
+      <div class="flex items-center gap-2.5 min-w-0 flex-shrink-0">
+        <div class="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shadow-lg flex-shrink-0">
+          <img src="logo.svg" alt="لوجو المطعم" class="w-full h-full object-contain restaurant-logo-img" />
+        </div>
+        <div class="min-w-0">
+          <div class="text-xs sm:text-sm font-black text-white truncate brand-restaurant-name" id="cashier-restaurant-name">مطعم فحمة ودخان</div>
+          <div class="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+            <span class="truncate">الكاشير (POS) متصل</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Navigation Tabs Bar (Desktop Only - Clean on Mobile) -->
+      <nav id="cashier-main-nav" class="hidden lg:flex items-center gap-1.5 bg-slate-950/90 p-1.5 rounded-2xl border border-slate-800 overflow-x-auto shadow-inner">
+        <button onclick="switchCashierTab('pos')" id="csh-nav-pos" class="csh-nav-tab py-2 px-3 sm:px-4 rounded-xl text-xs font-black transition flex items-center gap-1.5 bg-rose-600 text-white shadow-lg shadow-rose-600/30 whitespace-nowrap active:scale-95">
+          <span>🛒</span>
+          <span>أخذ الطلبات (POS)</span>
+        </button>
+        <button onclick="switchCashierTab('orders')" id="csh-nav-orders" class="csh-nav-tab py-2 px-3 sm:px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:text-white whitespace-nowrap active:scale-95 relative">
+          <span>🔔</span>
+          <span>الطلبات الجارية</span>
+          <span id="cashier-pending-orders-badge" class="hidden bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce">1 جديد</span>
+        </button>
+        <button onclick="switchCashierTab('tables')" id="csh-nav-tables" class="csh-nav-tab py-2 px-3 sm:px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:text-white whitespace-nowrap active:scale-95">
+          <span>🪑</span>
+          <span>طاولات الصالة</span>
+        </button>
+        <button onclick="switchCashierTab('menu')" id="csh-nav-menu" class="csh-nav-tab py-2 px-3 sm:px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:text-white whitespace-nowrap active:scale-95">
+          <span>🍽️</span>
+          <span>إدارة المنيو والأسعار</span>
+        </button>
+        <button onclick="switchCashierTab('qr')" id="csh-nav-qr" class="csh-nav-tab py-2 px-3 sm:px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:text-white whitespace-nowrap active:scale-95">
+          <span>📱</span>
+          <span>باركود QR</span>
+        </button>
+      </nav>
+
+      <!-- Header Action Buttons (Minimalist on Mobile) -->
+      <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        
+        <!-- Mobile Cart Button (Opens drawer) -->
+        <button onclick="toggleCashierCartDrawer()" id="cashier-header-cart-btn"
+          class="lg:hidden py-2 px-2.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 text-xs font-black rounded-xl transition flex items-center gap-1.5 active:scale-95 shadow-lg">
+          <span class="text-sm">🛒</span>
+          <span id="cashier-header-cart-count" class="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.5 rounded-full leading-none">0</span>
+          <span id="cashier-header-cart-total" class="text-amber-400 font-mono text-[11px] hidden sm:inline">0 د.ع</span>
+        </button>
+
+
+
+        <button onclick="logoutSession('cashier.html')" class="hidden xl:inline-flex py-2 px-3 bg-slate-900 hover:bg-rose-600 hover:text-white text-rose-400 text-xs font-bold rounded-xl border border-rose-500/30 transition items-center gap-1.5 active:scale-95 shadow-sm" title="تسجيل الخروج">
+          <span>🚪</span>
+          <span>خروج</span>
+        </button>
+
+        <!-- Mobile & Global Menu Toggle Button -->
+        <button onclick="openCashierMenuSidebar()"
+          title="القائمة الجانبية الشاملة"
+          class="w-10 h-10 rounded-2xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-white transition flex flex-col items-center justify-center gap-[4.5px] active:scale-95 flex-shrink-0 shadow-lg ring-1 ring-slate-700/50">
+          <span class="block w-4 h-[2px] bg-rose-500 rounded-full"></span>
+          <span class="block w-4 h-[2px] bg-white rounded-full"></span>
+          <span class="block w-4 h-[2px] bg-rose-500 rounded-full"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Cashier Mobile Menu Sidebar Drawer (Enriched & Comprehensive) -->
+    <div id="cashier-menu-sidebar" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex justify-end" onclick="if(event.target===this)closeCSidebar()">
+      <div class="w-80 max-w-[85vw] bg-slate-900 h-full flex flex-col border-r border-slate-800 shadow-2xl overflow-y-auto">
+        
+        <!-- Drawer Header -->
+        <div class="flex items-center justify-between p-4 pb-3 border-b border-slate-800 bg-slate-950/60">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 p-1 flex items-center justify-center">
+              <img src="logo.svg" alt="لوجو" class="w-full h-full object-contain restaurant-logo-img" />
+            </div>
+            <div>
+              <div class="text-white font-black text-xs sm:text-sm">قائمة الكاشير والتحكم</div>
+              <div class="text-[10px] text-emerald-400 font-bold" id="cashier-logged-user-label">المستخدم: كاشير الصندوق</div>
+            </div>
+          </div>
+          <button onclick="closeCSidebar()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-300 flex items-center justify-center text-xs font-bold transition">✕</button>
+        </div>
+        
+        <div class="p-3.5 space-y-3.5 flex-1">
+          
+          <!-- 1. أقسام الكاشير والتنقل -->
+          <div class="space-y-1.5">
+            <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1">أقسام العمل والشاشات</div>
+            <button onclick="switchCashierTab('pos');closeCSidebar()" id="cashier-side-btn-pos" class="w-full text-right py-2.5 px-3 bg-rose-600/20 text-rose-400 border border-rose-500/40 rounded-xl text-xs font-black transition flex items-center justify-between active:scale-98">
+              <span class="flex items-center gap-2"><span>🛒</span><span>أخذ الطلبات (POS)</span></span>
+            </button>
+            <button onclick="switchCashierTab('orders');closeCSidebar()" id="cashier-side-btn-orders" class="w-full text-right py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-between active:scale-98">
+              <span class="flex items-center gap-2"><span>🔔</span><span>الطلبات الجارية والمطبخ</span></span>
+              <span id="cashier-side-pending-badge" class="hidden bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">جديد</span>
+            </button>
+            <button onclick="switchCashierTab('tables');closeCSidebar()" id="cashier-side-btn-tables" class="w-full text-right py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-2 active:scale-98">
+              <span>🪑</span><span>طاولات الصالة الداخلية</span>
+            </button>
+            <button onclick="switchCashierTab('menu');closeCSidebar()" id="cashier-side-btn-menu" class="w-full text-right py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-2 active:scale-98">
+              <span>🍽️</span><span>إدارة المنيو والأسعار</span>
+            </button>
+            <button onclick="switchCashierTab('qr');closeCSidebar()" id="cashier-side-btn-qr" class="w-full text-right py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-2 active:scale-98">
+              <span>📱</span><span>باركود QR للطاولات</span>
+            </button>
+          </div>
+
+          <!-- 2. قسم أدوات الطباعة والوردية -->
+          <div class="pt-3 border-t border-slate-800/80 space-y-1.5">
+            <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1">إعدادات الطابعات والوردية</div>
+            
+            <button onclick="openPrinterSettingsModal();closeCSidebar()" class="w-full text-right py-2.5 px-3 bg-slate-950 hover:bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-between active:scale-98">
+              <span class="flex items-center gap-2"><span>🖨️</span><span>إعدادات الطابعات الحرارية (IP/USB)</span></span>
+              <span class="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-400">ضبط ⚙️</span>
+            </button>
+
+            <button onclick="endCashierShiftAndPrintZReport();closeCSidebar()" class="w-full text-right py-2.5 px-3 bg-amber-950/40 hover:bg-amber-950/80 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-black transition flex items-center justify-between active:scale-98">
+              <span class="flex items-center gap-2"><span>📊</span><span>إنهاء الجلسة وطباعة تقرير الوردية (Z)</span></span>
+              <span class="text-[10px] bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-300">Z-Report</span>
+            </button>
+
+            <button onclick="openDriverSettlementsModal();closeCSidebar()" class="w-full text-right py-2.5 px-3 bg-sky-950/40 hover:bg-sky-950/80 border border-sky-500/40 text-sky-300 rounded-xl text-xs font-black transition flex items-center justify-between active:scale-98">
+              <span class="flex items-center gap-2"><span>🛵</span><span>عُهد ومحفظة السائقين (محفظة التوصيل)</span></span>
+              <span class="text-[10px] bg-sky-500/20 px-1.5 py-0.5 rounded text-sky-300">تسوية 💰</span>
+            </button>
+          </div>
+
+          <!-- 3. قسم الروابط التشغيلية للمنظومة -->
+          <div class="pt-3 border-t border-slate-800/80 space-y-1.5">
+            <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1">الروابط التشغيلية للمنظومة</div>
+            
+            <a href="captain.html" data-dyn-page="captain.html" class="block py-2.5 px-3 bg-slate-950 hover:bg-amber-950/50 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-bold transition flex items-center gap-2 active:scale-98">
+              <span>👨‍🍳</span><span>تطبيق الكابتن والويتر</span>
+            </a>
+
+            <a href="index.html" data-dyn-page="index.html" class="block py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-2 active:scale-98">
+              <span>📱</span><span>منيو الزبائن العام</span>
+            </a>
+          </div>
+
+          <!-- Quick Stat Counters for Cashier -->
+          <div class="pt-3 border-t border-slate-800 space-y-2">
+            <div class="text-[10px] font-black text-slate-500 uppercase tracking-wider px-1">إحصائيات المنيو الحالية</div>
+            <div class="grid grid-cols-2 gap-2 text-center text-xs">
+              <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+                <span class="text-slate-400 block text-[10px]">إجمالي الأصناف</span>
+                <span id="stat-total-dishes" class="font-black text-white text-sm">0</span>
+              </div>
+              <div class="bg-slate-950 p-2 rounded-xl border border-emerald-500/30">
+                <span class="text-emerald-400 block text-[10px]">المتوفرة</span>
+                <span id="stat-available-dishes" class="font-black text-emerald-400 text-sm">0</span>
+              </div>
+              <div class="bg-slate-950 p-2 rounded-xl border border-rose-500/30">
+                <span class="text-rose-400 block text-[10px]">النافذة</span>
+                <span id="stat-out-dishes" class="font-black text-rose-400 text-sm">0</span>
+              </div>
+              <div class="bg-slate-950 p-2 rounded-xl border border-amber-500/30">
+                <span class="text-amber-400 block text-[10px]">طلبات جارية</span>
+                <span id="stat-active-orders" class="font-black text-amber-400 text-sm">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Technical Support & Logout -->
+          <div class="border-t border-slate-800 pt-3 space-y-2">
+            <a href="tel:07702265652" class="block py-2 px-3 bg-rose-600/10 border border-rose-500/20 text-rose-400 text-[11px] font-bold rounded-xl transition hover:bg-rose-600/20 flex items-center gap-2 text-center justify-center">
+              <span>📞</span><span>الدعم الفني: 07702265652</span>
+            </a>
+
+            <button onclick="logoutSession('cashier.html')" class="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2 active:scale-95">
+              <span>🚪</span><span>تسجيل الخروج من الكاشير</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Workspace Content Area -->
+    <main class="max-w-[1600px] w-full mx-auto p-2 sm:p-4 space-y-4 flex-1">
+      
+      <!-- Live Pending Menu Orders Alert Banner (Global) -->
+      <div id="cashier-pending-alert-banner" class="hidden bg-gradient-to-r from-amber-950/90 via-rose-950/90 to-amber-950/90 border-2 border-amber-500 rounded-2xl p-3 sm:p-4 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-pulse">
+        <div class="flex items-center gap-3 text-right">
+          <span class="text-2xl sm:text-3xl">🔔</span>
+          <div>
+            <h4 class="text-xs sm:text-sm font-black text-amber-300">يوجد طلب جديد وارد من المنيو الإلكتروني بانتظار الاعتماد!</h4>
+            <p class="text-[11px] text-slate-300">انقر لعرض الطلبات الجديدة وتأكيدها وطباعة بون المطبخ فورياً.</p>
+          </div>
+        </div>
+        <button onclick="switchCashierTab('orders')" class="py-2 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition whitespace-nowrap active:scale-95">
+          عرض الطلبات الجديدة ⚡
+        </button>
+      </div>
+
+      <!-- Live Waiter Call & Bill Request Alert Banner -->
+      <div id="cashier-call-waiter-banner" class="hidden bg-gradient-to-r from-amber-600 via-rose-600 to-amber-600 text-white p-3.5 rounded-2xl shadow-xl flex items-center justify-between gap-3 animate-pulse">
+        <div class="flex items-center gap-3">
+          <span class="text-3xl" id="csh-call-icon">🛎️</span>
+          <div>
+            <h4 class="text-xs sm:text-sm font-black" id="csh-call-title">نداء من الصالة</h4>
+            <p class="text-[11px] text-amber-100" id="csh-call-msg">طاولة رقم [ -- ] تطلب كابتن الصالة الآن!</p>
+          </div>
+        </div>
+        <button type="button" onclick="dismissCashierCallAlert()" class="py-1.5 px-3.5 bg-white text-slate-900 font-black text-xs rounded-xl shadow transition hover:bg-amber-100 active:scale-95">تمت الاستجابة ✅</button>
+      </div>
+
+      <!-- =========================================================
+           TAB 1: نقطة البيع الحديثة (2-Column POS Workspace)
+           ========================================================= -->
+      <div id="cashier-sec-pos" class="space-y-3.5">
+        
+        <!-- TOP ORDER TYPE & DESTINATION CONTROL BAR (شريط نوع الطلب والوجهة أعلى شاشة الكاشير لتوفير أقصى مساحة لتذكرة الطلب) -->
+        <div class="bg-slate-900/95 border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xl space-y-2.5">
+          <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+            
+            <!-- أزرار نوع الطلب الثلاثة: صالة / سفري / دليفري -->
+            <div class="grid grid-cols-3 gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800 text-center flex-shrink-0 lg:w-96">
+              <button type="button" onclick="setCashierOrderType('dine-in')" id="btn-type-dine-in" class="py-2 px-2 rounded-lg text-xs font-black text-center transition flex items-center justify-center gap-1.5 bg-emerald-600/20 border border-emerald-500 text-emerald-300 shadow-md shadow-emerald-600/20 ring-1 ring-emerald-500/50" title="تناول الطعام داخل الصالة وعلى الطاولات">
+                <span class="text-base">🍽️</span>
+                <span>الصالة (طاولة)</span>
+              </button>
+              <button type="button" onclick="setCashierOrderType('takeaway')" id="btn-type-takeaway" class="py-2 px-2 rounded-lg text-xs font-bold text-center transition flex items-center justify-center gap-1.5 bg-slate-950 border border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-white" title="الزبون يأتي بنفسه للمطعم لاستلام الوجبة بدون توصيل">
+                <span class="text-base">🛍️</span>
+                <span>سفري (استلام)</span>
+              </button>
+              <button type="button" onclick="setCashierOrderType('delivery')" id="btn-type-delivery" class="py-2 px-2 rounded-lg text-xs font-bold text-center transition flex items-center justify-center gap-1.5 bg-slate-950 border border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-white" title="طلب توصيل خارجي عبر الهاتف أو المنيو ويضاف إليه أجور التوصيل">
+                <span class="text-base">🛵</span>
+                <span>دليفري (توصيل)</span>
+              </button>
+            </div>
+
+            <!-- معلومات فرعية ديناميكية تتغير حسب نوع الطلب -->
+            <div class="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <!-- صندوق طاولة الصالة -->
+              <div id="cashier-table-box" class="flex-1 flex items-center justify-between gap-2 bg-slate-950 p-2 rounded-xl border border-emerald-500/30">
+                <div class="flex items-center gap-2">
+                  <span id="cashier-selected-table-badge" class="text-xs font-black text-emerald-400 whitespace-nowrap">🍽️ طاولة [ 1 ]</span>
+                  <span id="cashier-table-stat-badge" class="text-[10px] text-slate-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800"></span>
+                </div>
+                <div class="flex items-center gap-1.5 flex-1 max-w-[280px]">
+                  <label class="text-xs font-bold text-slate-300 whitespace-nowrap">رقم الطاولة:</label>
+                  <select id="cashier-table-select" onchange="selectedCashierTable=parseInt(this.value);openCashierOrderTakingView(this.value)" class="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-1.5 text-xs font-bold focus:border-emerald-500">
+                    <!-- Populated dynamically 1 to count from Supabase -->
+                  </select>
+                  <button type="button" onclick="openCashierTablePickerModal()" class="py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black transition flex items-center gap-1 shadow active:scale-95 whitespace-nowrap" title="فتح خارطة طاولات الصالة لاختيار الطاولة بسهولة">
+                    <span>🗺️</span>
+                    <span class="hidden sm:inline">خارطة الصالة</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- صندوق معلومات الزبون (اسم وهاتف) -->
+              <div id="cashier-customer-box" class="hidden flex-1 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                <input type="text" id="cashier-customer-info" placeholder="👤 اسم الزبون..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-rose-500 font-bold placeholder-slate-500" />
+                <input type="tel" id="cashier-customer-phone" placeholder="📱 رقم الهاتف..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-rose-500 font-mono placeholder-slate-500" />
+              </div>
+
+              <!-- صندوق أجور التوصيل المخصص لطلبات الدليفري فقط -->
+              <div id="cashier-delivery-fee-box" class="hidden flex-shrink-0 flex items-center gap-2 p-1.5 bg-blue-950/40 border border-blue-500/30 rounded-xl">
+                <span class="text-xs font-bold text-blue-300 flex items-center gap-1 whitespace-nowrap">
+                  <span>🛵</span>
+                  <span>التوصيل:</span>
+                </span>
+                <div class="flex items-center gap-1">
+                  <input type="number" id="cashier-delivery-fee" value="0" min="0" step="500" oninput="updateCashierCartUI()" class="w-20 bg-slate-950 border border-blue-500/50 rounded-lg p-1 text-center text-xs font-black text-blue-300 font-mono focus:outline-none focus:border-blue-400" />
+                  <span class="text-[10px] text-blue-300 font-bold">د.ع</span>
+                </div>
+                <div class="hidden sm:flex items-center gap-1">
+                  <button type="button" onclick="setCashierDeliveryFee(1000)" class="text-[10px] bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white px-2 py-1 rounded-lg border border-slate-800 transition font-mono">1,000</button>
+                  <button type="button" onclick="setCashierDeliveryFee(2000)" class="text-[10px] bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white px-2 py-1 rounded-lg border border-slate-800 transition font-mono">2,000</button>
+                  <button type="button" onclick="setCashierDeliveryFee(3000)" class="text-[10px] bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white px-2 py-1 rounded-lg border border-slate-800 transition font-mono">3,000</button>
+                  <button type="button" onclick="setCashierDeliveryFee(5000)" class="text-[10px] bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white px-2 py-1 rounded-lg border border-slate-800 transition font-mono">5,000</button>
+                  <button type="button" onclick="setCashierDeliveryFee(0)" class="text-[10px] bg-slate-900 hover:bg-rose-600 text-slate-300 hover:text-white px-2 py-1 rounded-lg border border-slate-800 transition">مجاني</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- حقل عنوان التوصيل المخصص للدليفري فقط -->
+          <div id="cashier-delivery-address-row" class="hidden">
+            <input type="text" id="cashier-customer-address" placeholder="📍 عنوان التوصيل بالتفصيل (الحي، الشارع، أقرب نقطة دالة)..." class="w-full bg-slate-950 border border-blue-500/40 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-blue-400 font-bold placeholder-slate-500" />
+          </div>
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
+          
+          <!-- RIGHT COLUMN: Products Grid & Quick Search (Col-span 7 or 8) -->
+          <div class="lg:col-span-7 xl:col-span-8 space-y-2.5 order-2 lg:order-1">
+            
+            <!-- Category Tabs & Search Bar -->
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 space-y-2.5 shadow-lg">
+              <div class="flex flex-col sm:flex-row items-center gap-2.5">
+                <div class="relative flex-1 w-full">
+                  <input type="text" id="cashier-pos-search" placeholder="🔍 بحث سريع عن وجبة بالاسم أو المكونات..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl py-2.5 px-3.5 focus:outline-none focus:border-rose-500 font-bold placeholder-slate-500" />
+                </div>
+                <div class="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-end">
+                  <button type="button" onclick="toggleCashierAvailableOnly()" id="btn-cash-filter-avail" class="sort-chip text-[11px] font-bold px-3 py-2 rounded-xl transition whitespace-nowrap bg-slate-950 text-slate-400 hover:bg-slate-800 border border-slate-800 flex items-center gap-1">
+                    <span>المتوفر فقط</span>
+                    <span>✅</span>
+                  </button>
+                  <div class="flex items-center gap-1">
+                    <button type="button" onclick="setCashierSort('default')" id="btn-cash-sort-default" class="sort-chip text-[10px] font-bold px-2.5 py-1.5 rounded-xl transition bg-rose-600 text-white">⭐ الكل</button>
+                    <button type="button" onclick="setCashierSort('price-asc')" id="btn-cash-sort-price-asc" class="sort-chip text-[10px] font-bold px-2 py-1.5 rounded-xl transition bg-slate-950 text-slate-400 hover:bg-slate-800">الأقل ⬇️</button>
+                    <button type="button" onclick="setCashierSort('price-desc')" id="btn-cash-sort-price-desc" class="sort-chip text-[10px] font-bold px-2 py-1.5 rounded-xl transition bg-slate-950 text-slate-400 hover:bg-slate-800">الأعلى ⬆️</button>
+                    <button type="button" onclick="setCashierSort('name-asc')" id="btn-cash-sort-name-asc" class="sort-chip text-[10px] font-bold px-2 py-1.5 rounded-xl transition bg-slate-950 text-slate-400 hover:bg-slate-800">أ - ي</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Categories horizontal scroll -->
+              <div class="category-scroll overflow-x-auto flex gap-1.5 pt-1.5 border-t border-slate-800/80 pos-scroll" id="cashier-pos-categories-bar">
+                <!-- فئات الوجبات -->
+              </div>
+            </div>
+
+            <!-- Dishes Grid with Touch-Friendly Cards - Spacious, Legible & Highly Clear -->
+            <div id="cashier-pos-dishes-grid" class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[calc(100vh-160px)] overflow-y-auto p-1 pos-scroll">
+              <!-- أطباق المنيو ببلاطات غنية بتفاصيل الوجبات -->
+            </div>
+          </div>
+
+          <!-- LEFT COLUMN: Sticky Current Ticket / Cart (Col-span 5 or 4 - Dynamic Auto-Expanding Height) -->
+          <div class="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-14 order-1 lg:order-2">
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl p-3 sm:p-3.5 shadow-2xl space-y-2.5 h-auto flex flex-col justify-start transition-all duration-200">
+              
+              <!-- 1. Ticket Header & Order Type Badge -->
+              <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">🧾</span>
+                  <div>
+                    <h3 class="text-xs sm:text-sm font-black text-white">تذكرة الطلب الحالية</h3>
+                    <span id="cashier-cart-mode-label" class="text-[10px] text-emerald-400 font-bold">طلب صالة داخلي — طاولة 1</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <span id="cashier-order-type-badge" class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    🍽️ صالة (طاولة 1)
+                  </span>
+                  <button type="button" onclick="clearCashierCart()" class="text-[10px] bg-slate-950 hover:bg-rose-600/30 text-slate-400 hover:text-rose-300 border border-slate-800 px-2 py-0.5 rounded-lg transition font-bold" title="تفريغ السلة">
+                    🗑️ تفريغ
+                  </button>
+                </div>
+              </div>
+
+              <!-- 2. المجموع الكلي وأزرار الإرسال والطباعة في الأعلى مباشرة كما طلب المستخدم -->
+              <div class="p-2.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                <div class="space-y-0.5">
+                  <div id="cashier-subtotal-row" class="hidden flex justify-between items-center text-[11px] text-slate-400">
+                    <span>مجموع الوجبات:</span>
+                    <span id="cashier-pos-subtotal" class="font-bold text-white font-mono">0 د.ع</span>
+                  </div>
+                  <div id="cashier-delivery-charge-row" class="hidden flex justify-between items-center text-[11px] text-blue-400">
+                    <span>أجور التوصيل (دليفري):</span>
+                    <span id="cashier-pos-delivery-charge" class="font-bold font-mono">0 د.ع</span>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-xs font-black text-slate-300">المجموع الكلي:</span>
+                    <span id="cashier-pos-total" class="text-base sm:text-lg font-black text-rose-400 font-mono">0 د.ع</span>
+                  </div>
+                </div>
+
+                <!-- زر إرسال الطلب للمطبخ الموحد (التحضير الفوري) -->
+                <div class="pt-2 border-t border-slate-800/80">
+                  <button type="button" onclick="submitCashierPOSOrder('kitchen')" class="w-full py-3.5 px-3 bg-gradient-to-r from-rose-600 via-rose-700 to-rose-600 hover:from-rose-500 hover:to-rose-600 text-white font-black text-sm sm:text-base rounded-2xl shadow-xl shadow-rose-600/30 transition flex items-center justify-center gap-2 active:scale-95" title="إرسال الطلب للمطبخ والتحضير الفوري">
+                    <span class="text-xl">👨‍🍳</span>
+                    <span>إلى المطبخ (إرسال للتحضير) 🚀</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 3. Ticket Items List (تطول ديناميكياً كلما زادت الوجبات وتظهر كل الأصناف والمكونات) -->
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between px-1">
+                  <span class="text-[11px] font-black text-slate-300">قائمة الأطعمة المختارة:</span>
+                  <span class="text-[10px] text-emerald-400 font-bold">عرض كامل وتلقائي ✨</span>
+                </div>
+                <div id="cashier-cart-items" class="flex flex-col gap-2 w-full">
+                  <!-- الأصناف المختارة مصفوفة وتتوسع بحرية لأسفل لتظهر جميعها -->
+                </div>
+                <div id="cashier-cart-empty" class="text-center py-4 text-slate-500 text-xs bg-slate-950/60 rounded-xl border border-dashed border-slate-800">
+                  🛒 انقر على أي وجبة من القائمة لإضافتها للتذكرة فوراً
+                </div>
+              </div>
+
+              <!-- Kitchen Notes & Quick Tag Chips (ملاحظات المطبخ مع فراغ واسع ومريح للأطعمة) -->
+              <div class="space-y-1.5 pt-2 border-t border-slate-800">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-black text-slate-400">ملاحظات التحضير للشيف:</span>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  <button type="button" onclick="appendCashierNote('بدون بصل')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">بدون بصل</button>
+                  <button type="button" onclick="appendCashierNote('حار زيادة 🌶️')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">حار زيادة</button>
+                  <button type="button" onclick="appendCashierNote('قليل ملح')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">قليل ملح</button>
+                  <button type="button" onclick="appendCashierNote('استواء كامل 🔥')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">استواء كامل</button>
+                </div>
+                <input type="text" id="cashier-pos-notes" placeholder="📝 اكتب أي ملاحظة إضافية للطلب هنا..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl p-2.5 focus:outline-none focus:border-rose-500 font-bold placeholder-slate-600" />
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- =========================================================
+           TAB 2: قسم الطلبات الجارية المستقل (Active Orders)
+           ========================================================= -->
+      <div id="cashier-sec-orders" class="hidden space-y-4">
+        
+        <div id="cashier-pos-active-orders-section" class="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div class="flex items-center gap-2.5">
+              <span class="text-2xl">🔔</span>
+              <div>
+                <h3 class="text-base sm:text-lg font-black text-white">فواتير وطلبات المطبخ والصالة الجارية</h3>
+                <p class="text-xs text-slate-400">متابعة فورية، اعتماد طلبات المنيو الإلكتروني، طباعة البون، والمحاسبة بنقرة واحدة</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="loadCashierOrders()" class="py-2 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white text-xs rounded-xl font-bold transition flex items-center gap-1.5 active:scale-95">
+                <span>🔄</span>
+                <span>تحديث الطلبات</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- شبكة كروت الطلبات والفواتير النشطة -->
+          <div id="cashier-orders-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- طلبات الصالة والمطبخ -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- =========================================================
+           TAB 3: قسم خريطة طاولات الصالة المستقل (Hall Floor Map)
+           ========================================================= -->
+      <div id="cashier-sec-tables" class="hidden space-y-4">
+        
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div class="flex items-center gap-2.5">
+              <span class="text-2xl">🪑</span>
+              <div>
+                <h3 class="text-base sm:text-lg font-black text-white">خريطة طاولات صالة المطعم</h3>
+                <p class="text-xs text-slate-400">انقر على طاولة فارغة لأخذ طلب جديد، أو انقر على طاولة مشغولة لعرض كشف الحساب والمحاسبة</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <div class="flex items-center gap-3 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 font-bold">
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-500"></span> ⚪ متاحة</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> 🟢 مشغولة</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- شبكة أزرار طاولات الصالة التفاعلية -->
+          <div id="cashier-tables-grid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 p-3 bg-slate-950 rounded-2xl border border-slate-800 min-h-[300px]">
+            <!-- طاولات الصالة التفاعلية -->
+          </div>
+        </div>
+
+      </div>
+
+
+
+      <!-- =========================================================
+           SECONDARY HIDDEN SECTIONS (Retained for JS Compatibility)
+           ========================================================= -->
+      <div id="cashier-sec-menu" class="hidden space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <h3 class="text-lg font-black text-white">قائمة أطباق المنيو والأسعار</h3>
+            <p class="text-xs text-slate-400">تعديل الأسعار، تغيير الصور، تفعيل أو إيقاف توفر الأطباق فورياً</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" onclick="triggerMenuExport()" title="تحميل وتنزيل نسخة احتياطية من المنيو (JSON)" class="py-2 px-3 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 font-bold text-xs rounded-xl transition flex items-center gap-1.5 active:scale-95 shadow-sm">
+              <span>📥 تحميل المنيو (JSON)</span>
+            </button>
+            <button type="button" onclick="triggerMenuExportCSV()" title="تصدير قائمة الطعام كملف إكسل للمعاينة والطباعة" class="py-2 px-3 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 font-bold text-xs rounded-xl transition flex items-center gap-1.5 active:scale-95 shadow-sm">
+              <span>📊 تصدير Excel</span>
+            </button>
+            <div class="relative">
+              <input type="file" id="menu-import-file-input" accept=".json" class="hidden" onchange="triggerMenuImport()" />
+              <button type="button" onclick="document.getElementById('menu-import-file-input').click()" title="استرجاع وتحديث قائمة أطباق المنيو من ملف" class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 active:scale-95">
+                <span>📤 استيراد منيو</span>
+              </button>
+            </div>
+            <button onclick="openCashierAddModal()" class="py-2 px-4 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/30 transition flex items-center gap-1.5 active:scale-95">
+              <span>+ إضافة صنف جديد</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/70 p-3 rounded-2xl border border-slate-800">
+          <div class="flex-1 category-scroll py-1" id="cashier-categories-bar"></div>
+          <div class="w-full sm:w-64">
+            <input type="text" id="cashier-search-input" placeholder="بحث عن طبق..." class="w-full bg-slate-950 border border-slate-700 text-white text-xs rounded-xl py-2 px-3" />
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto shadow-xl">
+          <table class="w-full text-right text-xs">
+            <thead class="bg-slate-950 text-slate-400 font-bold border-b border-slate-800">
+              <tr>
+                <th class="p-3">الصورة</th>
+                <th class="p-3">اسم الطبق</th>
+                <th class="p-3">القسم</th>
+                <th class="p-3">السعر</th>
+                <th class="p-3">الحالة</th>
+                <th class="p-3 text-left">إجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="cashier-dishes-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="cashier-sec-qr" class="hidden space-y-4">
+        <input type="number" id="cashier-qr-tables-count" class="hidden" />
+        <div id="cashier-qr-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"></div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ===================================================================
+       MODALS & DRAWERS
+       =================================================================== -->
+
+  <!-- Modal: خارطة طاولات الصالة التفاعلية لاختيار الطاولة وتحديد الأطعمة -->
+  <div id="cashier-table-picker-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-slate-900 border border-emerald-500/50 rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4">
+      
+      <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center text-xl font-black">🗺️</div>
+          <div>
+            <h3 class="font-black text-white text-base sm:text-lg flex items-center gap-2">
+              <span>خارطة طاولات الصالة</span>
+              <span class="text-xs text-emerald-400 font-mono bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-500/30">اختر طاولة للطلب</span>
+            </h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">انقر على أي طاولة لتحديدها فوراً والبدء باختيار الأطعمة والوجبات للزبون</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeCashierTablePickerModal()" class="w-8 h-8 bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white rounded-full flex items-center justify-center text-sm font-bold transition">✕</button>
+      </div>
+
+      <!-- إحصائيات ومفاتيح ألوان الخارطة -->
+      <div class="flex flex-wrap items-center justify-between gap-2 text-xs p-2.5 bg-slate-950 rounded-2xl border border-slate-800">
+        <div class="flex items-center gap-4">
+          <span class="flex items-center gap-1.5 text-emerald-400 font-bold">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></span>
+            <span>طاولة متاحة (طلب جديد)</span>
+          </span>
+          <span class="flex items-center gap-1.5 text-amber-400 font-bold">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shadow-sm shadow-amber-400/50"></span>
+            <span>طاولة مشغولة (إلحاق وجبات)</span>
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="cashier-picker-tables-count-badge" class="text-xs text-slate-300 font-bold font-mono bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800">جاري التحميل...</span>
+          <button type="button" onclick="switchCashierTab('tables'); closeCashierTablePickerModal();" class="text-[11px] text-blue-400 hover:text-blue-300 font-bold underline" title="الانتقال إلى شاشة إدارة الصالة الكاملة">عرض شاشة الصالة ↗</button>
+        </div>
+      </div>
+
+      <!-- شبكة طاولات الصالة التفاعلية المستندة إلى سحابة Supabase -->
+      <div id="cashier-table-picker-grid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3 max-h-[55vh] overflow-y-auto p-1">
+        <!-- يتم ملؤها ديناميكياً من جافاسكريبت حسب عدد طاولات Supabase -->
+      </div>
+
+      <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
+        <span class="text-[11px] text-slate-500 font-medium">💡 يتم حفظ واحتساب رقم الطاولة تلقائياً في فواتير الصالة وبونات المطبخ</span>
+        <button type="button" onclick="closeCashierTablePickerModal()" class="py-2 px-5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition">
+          إغلاق النافذة
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal: كشف حساب وإدارة الطاولة المشغولة -->
+  <div id="active-table-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
+      
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold">🪑</div>
+          <div>
+            <h4 id="atm-table-title" class="text-sm sm:text-base font-black text-white">طاولة رقم [ 1 ] - مشغولة</h4>
+            <p id="atm-order-meta" class="text-[11px] text-slate-400">#ORD-0000 • 🕒 00:00</p>
+          </div>
+        </div>
+        <button onclick="closeActiveTableModal()" class="w-7 h-7 bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white rounded-full flex items-center justify-center text-xs font-bold transition">✕</button>
+      </div>
+
+      <!-- Items List Container -->
+      <div class="space-y-2">
+        <div class="text-xs font-bold text-slate-400">الوجبات والطلبات الحالية:</div>
+        <div id="atm-items-list" class="space-y-1.5 max-h-52 overflow-y-auto bg-slate-950 p-2.5 rounded-2xl border border-slate-800">
+          <!-- تتولد الوجبات هنا -->
+        </div>
+      </div>
+
+      <!-- Notes if any -->
+      <div id="atm-notes-box" class="hidden text-xs text-amber-300 bg-amber-950/40 p-2.5 rounded-xl border border-amber-500/30 font-bold">
+        📝 ملاحظة: <span id="atm-notes-text"></span>
+      </div>
+
+      <!-- Total Bill -->
+      <div class="flex justify-between items-center bg-slate-950 p-3 rounded-2xl border border-slate-800">
+        <span class="text-xs text-slate-400 font-bold">المجموع الكلي المطلوب:</span>
+        <span id="atm-total-price" class="text-lg font-black text-rose-400 font-mono">0 د.ع</span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="space-y-2 pt-2 border-t border-slate-800">
+        <button type="button" onclick="addMoreItemsToActiveTable()" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-xs font-black rounded-xl transition flex items-center justify-center gap-2 active:scale-95">
+          <span>➕</span>
+          <span>إضافة وجبات / مشروبات إضافية لنفس الطاولة</span>
+        </button>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" onclick="printActiveTableKitchenTicket()" class="py-2.5 px-3 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white border border-rose-500/40 text-xs font-black rounded-xl transition flex items-center justify-center gap-1.5 active:scale-95" title="طباعة بون المطبخ على طابعة 101">
+            <span>👨‍🍳</span>
+            <span>بون المطبخ (101)</span>
+          </button>
+          <button type="button" onclick="printActiveTableBill()" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 text-xs font-black rounded-xl transition flex items-center justify-center gap-1.5 active:scale-95" title="طباعة فاتورة الحساب على طابعة 100">
+            <span>🧾</span>
+            <span>فاتورة الحساب (100)</span>
+          </button>
+        </div>
+
+        <button type="button" onclick="closeAndPayActiveTable()" class="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white text-xs sm:text-sm font-black rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95">
+          <span>💵</span>
+          <span>محاسبة وإغلاق الفاتورة وتفريغ الطاولة ✅</span>
+        </button>
+
+        <button type="button" onclick="cancelAndVoidActiveTable()" class="w-full py-2.5 px-4 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-500/30 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 active:scale-95">
+          <span>❌</span>
+          <span>إلغاء الطلب وتفريغ الطاولة نهائياً (حذف)</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal: تعديل وحذف طلبات المنيو المعلقة للكاشير -->
+  <div id="cashier-edit-order-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold">✏️</div>
+          <div>
+            <h4 id="ceom-order-title" class="text-sm sm:text-base font-black text-white">تعديل الطلب</h4>
+            <p id="ceom-order-meta" class="text-[11px] text-slate-400">#ORD-0000</p>
+          </div>
+        </div>
+        <button onclick="closeCashierEditOrderModal()" class="w-7 h-7 bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white rounded-full flex items-center justify-center text-xs font-bold transition">✕</button>
+      </div>
+
+      <div class="space-y-2">
+        <div class="text-xs font-bold text-slate-400 flex justify-between items-center">
+          <span>الأصناف والكميات:</span>
+          <span class="text-[11px] text-slate-500">يمكنك زيادة/إنقاص الكمية أو حذف أي صنف</span>
+        </div>
+        <div id="ceom-items-list" class="space-y-2 max-h-56 overflow-y-auto bg-slate-950 p-2.5 rounded-2xl border border-slate-800">
+          <!-- Items injected by JS -->
+        </div>
+      </div>
+
+      <!-- قسم إضافة صنف جديد للطلب الحالي -->
+      <div class="bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-2">
+        <label class="block text-xs font-bold text-amber-400">➕ إضافة صنف جديد لهذا الطلب:</label>
+        <div class="flex gap-2">
+          <select id="ceom-add-dish-select" class="flex-1 bg-slate-900 border border-slate-700 text-white text-xs rounded-xl p-2.5 focus:outline-none focus:border-amber-500">
+            <option value="">-- اختر صنفاً من قائمة المنيو لإضافته --</option>
+          </select>
+          <button type="button" onclick="addDishToCurrentEditingOrder()" class="py-2 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition flex items-center gap-1 active:scale-95 shadow-md">
+            <span>➕ إضافة</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">رقم الطاولة / نوع الطلب:</label>
+          <input type="text" id="ceom-order-table" class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl p-2.5 focus:outline-none focus:border-amber-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">ملاحظات الطلب:</label>
+          <input type="text" id="ceom-order-notes" class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl p-2.5 focus:outline-none focus:border-amber-500" />
+        </div>
+      </div>
+
+      <div class="flex justify-between items-center bg-slate-950 p-3 rounded-2xl border border-slate-800">
+        <span class="text-xs text-slate-400 font-bold">المجموع الجديد بعد التعديل:</span>
+        <span id="ceom-total-price" class="text-lg font-black text-amber-400 font-mono">0 د.ع</span>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+        <button type="button" onclick="saveCashierEditOrder()" class="py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white text-xs font-black rounded-xl transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/30 active:scale-95">
+          <span>💾 حفظ التعديلات</span>
+        </button>
+        <button type="button" onclick="deleteCurrentEditOrderPermanently()" class="py-2.5 px-4 bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-500/40 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-95">
+          <span>🗑️ حذف الطلب نهائياً</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: إضافة وتعديل طبق للكاشير -->
+  <div id="cashier-dish-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+      
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+        <h4 id="dish-modal-title" class="text-base font-black text-white">تعديل بيانات الطبق</h4>
+        <button onclick="closeCashierDishModal()" class="w-7 h-7 bg-slate-800 text-slate-400 rounded-full flex items-center justify-center">✕</button>
+      </div>
+
+      <form id="cashier-dish-form" onsubmit="saveDishFromCashier(event)" class="space-y-3 text-right">
+        <input type="hidden" id="dish-form-id" />
+        
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">اسم الطبق *</label>
+          <input type="text" id="dish-form-name" required placeholder="مثال: بركر لحم دبل" class="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">الاسم بالإنجليزية (اختياري)</label>
+          <input type="text" id="dish-form-name-en" placeholder="Double Beef Burger" class="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white" />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">القسم *</label>
+            <select id="dish-form-category" class="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white">
+              <!-- الفئات -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-amber-300 mb-1">نوع التسعير *</label>
+            <select id="dish-form-pricing-type" onchange="toggleDishPricingTypeUI()" class="w-full bg-slate-800 border border-amber-500/40 rounded-xl p-2.5 text-xs text-amber-200 font-bold">
+              <option value="fixed">سعر ثابت للقطعة/الوجبة</option>
+              <option value="per_kg">⚖️ بالكيلوغرام / بالوزن (سمك)</option>
+            </select>
+          </div>
+          <div>
+            <label id="dish-form-price-label" class="block text-xs font-bold text-slate-300 mb-1">السعر الحالي (د.ع) *</label>
+            <input type="number" id="dish-form-price" required placeholder="مثال: 5000" class="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-amber-400 mb-1">السعر قبل الخصم (اختياري)</label>
+          <input type="number" id="dish-form-old-price" placeholder="مثال: 7000" class="w-full bg-slate-800 border border-amber-500/40 rounded-xl p-2.5 text-xs text-amber-300" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">المكونات التفصيلية للطبق 🌿</label>
+          <textarea id="dish-form-ingredients" rows="2" placeholder="المكونات..." class="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white"></textarea>
+        </div>
+
+        <!-- قسم الصورة والمعاينة والتنزيل والرفع -->
+        <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2.5">
+          <label class="block text-xs font-bold text-slate-300">📸 صورة الطبق وإدارتها:</label>
+          <div class="flex items-center gap-3">
+            <div class="w-20 h-20 rounded-2xl bg-slate-900 border border-slate-700 overflow-hidden flex-shrink-0 relative flex items-center justify-center">
+              <img id="cashier-dish-form-preview-img" src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120" alt="معاينة الطبق" class="w-full h-full object-cover" />
+            </div>
+            
+            <div class="flex-1 space-y-1.5">
+              <div class="flex flex-wrap gap-1.5">
+                <label class="py-1.5 px-3 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1">
+                  <span>📁 رفع صورة من جهازك</span>
+                  <input type="file" id="cashier-dish-form-file-input" accept="image/*" class="hidden" onchange="handleDishImageUpload(this, 'dish-form-image', 'cashier-dish-form-preview-img')" />
+                </label>
+                
+                <button type="button" onclick="downloadCurrentDishImage('dish-form-image', 'dish-form-name')" class="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1">
+                  <span>⬇️ تنزيل الصورة للجهاز</span>
+                </button>
+              </div>
+              <input type="text" id="dish-form-image" placeholder="أو الصق رابط URL مباشر للصورة..." oninput="updateDishImagePreview(this.value, 'cashier-dish-form-preview-img')" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs text-white" />
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">السعرات الحرارية</label>
+            <input type="text" id="dish-form-calories" placeholder="مثال: 550 سعرة" class="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">الوصف الإضافي</label>
+            <input type="text" id="dish-form-desc" class="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white" />
+          </div>
+        </div>
+
+        <div class="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-2 text-xs text-emerald-400 font-bold cursor-pointer">
+              <input type="checkbox" id="dish-form-available" class="w-4 h-4 accent-emerald-500 rounded" checked />
+              <span>الطبق متوفر وجاهز للطلب ✅</span>
+            </label>
+            <label class="flex items-center gap-2 text-xs text-emerald-300 font-bold cursor-pointer">
+              <input type="checkbox" id="dish-form-free-delivery" class="w-4 h-4 accent-emerald-500 rounded" />
+              <span>🛵 توصيل مجاني</span>
+            </label>
+          </div>
+          <div class="grid grid-cols-4 gap-2 pt-2 border-t border-slate-800">
+            <label class="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+              <input type="checkbox" id="dish-form-popular" class="accent-rose-600 rounded" />
+              <span>⭐ مميز</span>
+            </label>
+            <label class="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+              <input type="checkbox" id="dish-form-spicy" class="accent-rose-600 rounded" />
+              <span>🌶️ حار</span>
+            </label>
+            <label class="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+              <input type="checkbox" id="dish-form-veg" class="accent-rose-600 rounded" />
+              <span>🥗 نباتي</span>
+            </label>
+            <label class="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+              <input type="checkbox" id="dish-form-new" class="accent-rose-600 rounded" />
+              <span>✨ جديد</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="pt-2 flex gap-2">
+          <button type="submit" class="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/30 transition">
+            حفظ الطبق ونشره
+          </button>
+          <button type="button" onclick="closeCashierDishModal()" class="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition">
+            إلغاء
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- Modal: تعديل أوقات العمل والعطل والواي فاي -->
+  <div id="cashier-work-hours-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h4 class="text-base font-black text-white">أوقات العمل والواي فاي</h4>
+        <button onclick="closeCashierWorkHoursModal()" class="w-7 h-7 bg-slate-800 text-slate-400 rounded-full flex items-center justify-center">✕</button>
+      </div>
+      <form onsubmit="saveCashierWorkHours(event)" class="space-y-3 text-right">
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">حالة استقبال الطلبات في المنيو:</label>
+          <select id="cashier-setting-store-status" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-bold focus:border-rose-500">
+            <option value="auto">⏱️ تلقائي حسب ساعات الدوام الرسمية</option>
+            <option value="open">🟢 مفتوح دائماً لاستقبال الطلبات الآن</option>
+            <option value="closed">🔴 مغلق مؤقتاً الآن (استقبال حجوزات الغد فقط)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">ساعات العمل الرسمية:</label>
+          <input type="text" id="cashier-setting-hours" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white" />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 mb-1">ساعة الافتتاح (24h):</label>
+            <input type="time" id="cashier-setting-open-time" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-xs text-white font-mono" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 mb-1">ساعة الإغلاق (24h):</label>
+            <input type="time" id="cashier-setting-close-time" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-xs text-white font-mono" />
+          </div>
+        </div>
+        <div>
+          <label class="flex items-center gap-2 cursor-pointer pt-0.5">
+            <input type="checkbox" id="cashier-setting-allow-preorder" class="w-4 h-4 accent-amber-500 rounded" checked />
+            <span class="text-xs font-bold text-amber-300">السماح بالحجز المسبق لليوم التالي عند الإغلاق 📅</span>
+          </label>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-amber-400 mb-1">أيام العطل:</label>
+          <input type="text" id="cashier-setting-holidays" class="w-full bg-slate-950 border border-amber-500/40 rounded-xl p-2.5 text-xs text-amber-200" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">اسم الواي فاي:</label>
+            <input type="text" id="cashier-setting-wifi-name" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-rose-300" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">رمز الواي فاي:</label>
+            <input type="text" id="cashier-setting-wifi-pass" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 font-mono" />
+          </div>
+        </div>
+        <div class="pt-2 flex gap-2">
+          <button type="submit" class="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/30 transition">حفظ الإعدادات</button>
+          <button type="button" onclick="closeCashierWorkHoursModal()" class="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition">إلغاء</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- درج السلة المستقل لشاشة الكاشير (Mobile Standalone Cart Drawer) -->
+  <div id="cashier-cart-drawer" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex justify-end" onclick="if(event.target===this)toggleCashierCartDrawer()">
+    <div class="w-full max-w-md bg-slate-900 h-full flex flex-col border-r border-slate-800 shadow-2xl overflow-hidden">
+      <div class="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">🛒</span>
+          <div>
+            <h3 class="text-sm font-black text-white">سلة الطلب الحالي (الكاشير)</h3>
+            <span id="cashier-drawer-order-type" class="text-[10px] text-amber-400 font-bold">طلب سفري / استلام</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="clearCashierCart(); syncCashierDrawerCart();" class="text-[11px] bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white px-2.5 py-1 rounded-xl transition font-bold">
+            تفريغ 🗑️
+          </button>
+          <button onclick="toggleCashierCartDrawer()" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-400 flex items-center justify-center text-xs font-bold transition">✕</button>
+        </div>
+      </div>
+
+      <div class="flex-1 p-4 overflow-y-auto space-y-2.5" id="cashier-drawer-cart-items"></div>
+
+      <div id="cashier-drawer-cart-empty" class="hidden text-center py-12 text-slate-500 text-xs px-4">
+        <div class="text-3xl mb-2">🛒</div>
+        السلة فارغة حالياً. انقر على أي طبق لإضافته للطلب!
+      </div>
+
+      <div class="p-4 border-t border-slate-800 bg-slate-950 space-y-3">
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-slate-400 font-bold">المجموع الإجمالي:</span>
+          <span id="cashier-drawer-total" class="text-lg font-black text-rose-400 font-mono">0 د.ع</span>
+        </div>
+        <div class="space-y-1.5">
+          <input type="text" id="cashier-drawer-notes" placeholder="📝 ملاحظات خاصة للمطبخ..." oninput="syncCashierNotes(this.value)" class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl p-2.5 focus:outline-none focus:border-rose-500 font-bold" />
+        </div>
+        <div class="pt-1">
+          <button onclick="submitCashierPOSOrder('kitchen'); toggleCashierCartDrawer();" class="w-full py-3.5 px-3 bg-gradient-to-r from-rose-600 via-rose-700 to-rose-600 hover:from-rose-500 hover:to-rose-600 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-600/30 transition flex items-center justify-center gap-2 active:scale-95">
+            <span class="text-xl">👨‍🍳</span>
+            <span>إلى المطبخ (إرسال للتحضير) 🚀</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: إدخال وزن الطبق (بالكيلو / بالوزن مثل السمك) -->
+  <div id="cashier-weight-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-5 sm:p-6 max-w-sm w-full shadow-2xl space-y-4 text-center">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+        <h4 class="text-sm font-black text-white flex items-center gap-1.5">
+          <span>⚖️</span>
+          <span id="cwm-modal-title">إدخال وزن الطلب</span>
+        </h4>
+        <button type="button" onclick="closeCashierWeightModal()" class="w-7 h-7 bg-slate-800 text-slate-400 hover:text-white rounded-full flex items-center justify-center text-xs font-bold">✕</button>
+      </div>
+
+      <div>
+        <div id="cwm-dish-name" class="font-black text-rose-400 text-base mb-1">اسم الطبق</div>
+        <div id="cwm-dish-price-kg" class="text-xs text-slate-400 font-bold font-mono">سعر الكيلوغرام: 0 د.ع</div>
+      </div>
+
+      <!-- إدخال الوزن -->
+      <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2.5">
+        <label class="block text-xs text-slate-300 font-bold">الوزن المطلوب بالكيلوغرام (كغم):</label>
+        <div class="flex items-center justify-center gap-2">
+          <button type="button" onclick="adjustWeightInput(-0.25)" class="w-10 h-10 bg-slate-800 hover:bg-slate-700 active:scale-90 text-white font-black rounded-xl text-lg flex items-center justify-center transition">−</button>
+          <input type="number" step="0.05" min="0.1" id="cwm-weight-input" oninput="calculateWeightModalTotal()" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmWeightModalAction();}" class="w-36 text-center text-xl font-black bg-slate-900 border border-amber-500/50 text-amber-400 rounded-xl py-2 focus:outline-none focus:border-rose-500 font-mono placeholder:text-slate-600 placeholder:text-sm" placeholder="أدخل الوزن..." value="" autofocus />
+          <button type="button" onclick="adjustWeightInput(0.25)" class="w-10 h-10 bg-slate-800 hover:bg-slate-700 active:scale-90 text-white font-black rounded-xl text-lg flex items-center justify-center transition">＋</button>
+        </div>
+        
+        <!-- أزرار أوزان سريعة -->
+        <div class="grid grid-cols-4 gap-1.5 pt-1">
+          <button type="button" onclick="setWeightInput(0.5)" class="py-1.5 px-1 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg transition active:scale-95">0.5 كغم</button>
+          <button type="button" onclick="setWeightInput(1.0)" class="py-1.5 px-1 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg transition active:scale-95">1.0 كغم</button>
+          <button type="button" onclick="setWeightInput(1.5)" class="py-1.5 px-1 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg transition active:scale-95">1.5 كغم</button>
+          <button type="button" onclick="setWeightInput(2.0)" class="py-1.5 px-1 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg transition active:scale-95">2.0 كغم</button>
+        </div>
+      </div>
+
+      <!-- إجمالي السعر المحسوب -->
+      <div class="bg-rose-950/40 border border-rose-500/40 p-3 rounded-2xl flex items-center justify-between">
+        <span class="text-xs text-slate-300 font-bold">المجموع المحسوب:</span>
+        <span id="cwm-total-display" class="text-lg font-black text-rose-400 font-mono">0 د.ع</span>
+      </div>
+
+      <button type="button" id="cwm-confirm-btn" onclick="confirmWeightModalAction()" class="w-full py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg shadow-rose-600/30 transition flex items-center justify-center gap-1.5 active:scale-95">
+        <span id="cwm-confirm-text">⚖️ تأكيد الوزن وحساب الفاتورة</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Thermal Kitchen Print Ticket -->
+  <div id="kitchen-print-ticket"></div>
+
+  <!-- Cloud Database CDN & Scripts -->
+  <script src="env-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="auth-core.js?v=6.1"></script>
+  <script src="bundle-cashier.js?v=6.1"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('sw.js').catch(function(e) {
+          console.log('[PWA] SW register notice:', e);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

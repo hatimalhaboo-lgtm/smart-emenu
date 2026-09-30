@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>بوابة سائق التوصيل | مطعم فحمة ودخان</title>
+
+  <!-- PWA Configuration for Driver -->
+  <link rel="manifest" href="driver-manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="سائق فحمة" />
+  <meta name="theme-color" content="#0284c7" />
+  <link rel="apple-touch-icon" href="logo.svg" />
+
+  <!-- Fonts & Tailwind -->
+  <link rel="stylesheet" href="tailwind.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="env-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- التحقق الفوري من صلاحية الجلسة قبل عرض الصفحة -->
+  <script>
+    (function() {
+      try {
+        var restId = '';
+        var p = new URLSearchParams(window.location.search);
+        if (p.get('rest')) restId = p.get('rest').toLowerCase();
+        
+        var keys = [
+          'smart_emenu_active_session',
+          'smart_emenu_' + restId + '_session',
+          'smart_emenu_session',
+          'smart_emenu_fahma_dokhan_session',
+          'driver_session',
+          'admin_session'
+        ];
+        var isAuth = false;
+        var role = null;
+        for (var i = 0; i < keys.length; i++) {
+          var raw = sessionStorage.getItem(keys[i]) || localStorage.getItem(keys[i]);
+          if (raw) {
+            try {
+              var s = JSON.parse(raw);
+              if (s && (s.role === 'driver' || s.role === 'admin' || s.role === 'super_admin')) {
+                isAuth = true;
+                role = s.role;
+                break;
+              }
+            } catch(e) {}
+          }
+        }
+        if (!isAuth && (sessionStorage.getItem('is_super_admin_logged_in') === 'true' || localStorage.getItem('is_super_admin_logged_in') === 'true')) {
+          isAuth = true;
+        }
+        if (!isAuth) {
+          window.location.replace('login.html?role=driver&rest=' + encodeURIComponent(restId));
+        }
+      } catch(e) {}
+    })();
+  </script>
+
+  <style>
+    body {
+      background: #090d16;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+    .glass-header {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .order-card {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.2s ease;
+    }
+    .order-card:hover {
+      border-color: rgba(14, 165, 233, 0.4);
+    }
+    .pulse-dot {
+      animation: pulseAnim 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulseAnim {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.15); }
+    }
+  </style>
+</head>
+<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-white pb-20">
+
+  <!-- ========================================== -->
+  <!-- 1. شريط الرأس العلوي (Top Header) -->
+  <!-- ========================================== -->
+  <header class="glass-header sticky top-0 z-40 px-4 py-3">
+    <div class="max-w-4xl mx-auto flex items-center justify-between gap-3">
+      
+      <!-- شعار واسم المطعم -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-600 to-blue-500 p-2 shadow-lg shadow-sky-600/30 flex items-center justify-center text-xl">
+          🛵
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm font-black text-white" id="header-rest-name">مطعم فحمة ودخان</h1>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 font-bold border border-sky-500/30">بوابة السائق</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+            <span id="driver-name-display" class="text-slate-300 font-bold">مندوب التوصيل</span>
+            <span class="text-slate-600">•</span>
+            <span id="realtime-status-badge" class="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 pulse-dot inline-block"></span>
+              <span>متصل لحظياً</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- الأزرار السريعة: تنبيه صوتي، تحديث، خروج -->
+      <div class="flex items-center gap-2">
+        <button onclick="toggleAudioAlerts()" id="audio-toggle-btn" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 transition" title="تفعيل / تعطيل جرس التنبيه">
+          🔔
+        </button>
+
+        <button onclick="loadOrders(true)" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition active:scale-95" title="تحديث الطلبات">
+          🔄
+        </button>
+
+        <button onclick="handleDriverLogout()" class="px-3 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 text-xs font-bold transition flex items-center gap-1.5 active:scale-95">
+          <span>خروج</span>
+          <span>🚪</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ========================================== -->
+  <!-- 2. بطاقات الإحصائيات السريعة -->
+  <!-- ========================================== -->
+  <section class="max-w-4xl mx-auto w-full px-4 pt-4">
+    <div class="grid grid-cols-3 sm:grid-cols-4 gap-2 text-center">
+      
+      <div class="bg-slate-900/80 border border-sky-500/30 rounded-2xl p-3 shadow-md">
+        <div class="text-[11px] text-slate-400 font-bold">طلباتي قيد التوصيل</div>
+        <div id="stat-active-count" class="text-xl sm:text-2xl font-black text-sky-400 mt-0.5 font-mono">0</div>
+      </div>
+
+      <div class="bg-slate-900/80 border border-amber-500/30 rounded-2xl p-3 shadow-md">
+        <div class="text-[11px] text-slate-400 font-bold">طلبات متاحة للاستلام</div>
+        <div id="stat-available-count" class="text-xl sm:text-2xl font-black text-amber-400 mt-0.5 font-mono">0</div>
+      </div>
+
+      <div class="bg-slate-900/80 border border-emerald-500/30 rounded-2xl p-3 shadow-md">
+        <div class="text-[11px] text-slate-400 font-bold">تم تسليمها اليوم</div>
+        <div id="stat-delivered-count" class="text-xl sm:text-2xl font-black text-emerald-400 mt-0.5 font-mono">0</div>
+      </div>
+
+      <div class="hidden sm:block bg-slate-900/80 border border-purple-500/30 rounded-2xl p-3 shadow-md">
+        <div class="text-[11px] text-slate-400 font-bold">مبالغ التحصيل</div>
+        <div id="stat-collected-total" class="text-base font-black text-purple-300 mt-1 font-mono">0 د.ع</div>
+      </div>
+
+    </div>
+
+    <!-- بطاقة محفظة ورصيد السائق اللحظي -->
+    <div class="mt-3 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/30 rounded-2xl p-3.5 shadow-xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-base">💼</span>
+          <span class="text-xs font-black text-white">محفظة العهدة النقدية والحسابات اليومية</span>
+        </div>
+        <span class="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-bold">تسوية الصندوق</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 text-center text-xs">
+        <div class="bg-slate-950/80 p-2 rounded-xl border border-slate-800">
+          <span class="text-[10px] text-slate-400 block">💵 النقد بعهدتك</span>
+          <span id="wallet-cash-in-hand" class="text-xs sm:text-sm font-black text-emerald-400 font-mono">0 د.ع</span>
+        </div>
+        <div class="bg-slate-950/80 p-2 rounded-xl border border-slate-800">
+          <span class="text-[10px] text-slate-400 block">🛵 عمولتك المستحقة</span>
+          <span id="wallet-fees-earned" class="text-xs sm:text-sm font-black text-amber-400 font-mono">0 د.ع</span>
+        </div>
+        <div class="bg-slate-950/80 p-2 rounded-xl border border-indigo-500/40">
+          <span class="text-[10px] text-indigo-300 block">🏦 الصافي للصندوق</span>
+          <span id="wallet-net-payable" class="text-xs sm:text-sm font-black text-white font-mono">0 د.ع</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- 3. شريط التبويبات الرئيسي -->
+  <!-- ========================================== -->
+  <nav class="max-w-4xl mx-auto w-full px-4 pt-4">
+    <div class="flex items-center gap-2 border-b border-slate-800 pb-2">
+      <button onclick="switchTab('active')" id="tab-btn-active" class="flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-1.5 bg-sky-600 text-white shadow-lg shadow-sky-600/30">
+        <span>🛵 طلباتي قيد التوصيل</span>
+        <span id="badge-active-tab" class="px-1.5 py-0.2 bg-white/20 rounded-full text-[10px] font-mono">0</span>
+      </button>
+
+      <button onclick="switchTab('available')" id="tab-btn-available" class="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 bg-slate-900 text-slate-400 hover:text-white border border-slate-800">
+        <span>📦 طلبات متاحة جديدة</span>
+        <span id="badge-available-tab" class="px-1.5 py-0.2 bg-slate-800 rounded-full text-[10px] font-mono">0</span>
+      </button>
+
+      <button onclick="switchTab('completed')" id="tab-btn-completed" class="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 bg-slate-900 text-slate-400 hover:text-white border border-slate-800">
+        <span>✅ تم تسليمها</span>
+        <span id="badge-completed-tab" class="px-1.5 py-0.2 bg-slate-800 rounded-full text-[10px] font-mono">0</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ========================================== -->
+  <!-- 4. محتوى الطلبات (Cards Container) -->
+  <!-- ========================================== -->
+  <main class="max-w-4xl mx-auto w-full px-4 pt-4 flex-1">
+    
+    <!-- حالة التحميل -->
+    <div id="loading-state" class="py-16 text-center space-y-3">
+      <div class="inline-block animate-spin text-3xl text-sky-500">⏳</div>
+      <p class="text-xs text-slate-400 font-bold">جاري تحميل وتحديث طلبات التوصيل...</p>
+    </div>
+
+    <!-- قائمة الطلبات -->
+    <div id="orders-list-container" class="space-y-4 hidden">
+      <!-- يتم حقن بطاقات الطلبات ديناميكياً هنا -->
+    </div>
+
+    <!-- حالة عدم وجود طلبات -->
+    <div id="empty-state" class="hidden py-16 text-center space-y-3 bg-slate-900/40 rounded-3xl border border-slate-800 p-8">
+      <div class="text-4xl" id="empty-state-icon">🛵</div>
+      <h3 class="text-sm font-black text-white" id="empty-state-title">لا توجد طلبات في هذا القسم حالياً</h3>
+      <p class="text-xs text-slate-400" id="empty-state-desc">سيتم إشعارك فور وصول أو تكليف طلب توصيل جديد للمطعم</p>
+      <button onclick="loadOrders(true)" class="mt-3 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition">
+        🔄 فحص الطلبات مجدداً
+      </button>
+    </div>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- 5. نافذة تأكيد تسليم الطلب (Complete Modal) -->
+  <!-- ========================================== -->
+  <div id="complete-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4 text-center">
+      <div class="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-3xl mx-auto border border-emerald-500/30">
+        ✅
+      </div>
+      <div>
+        <h3 class="text-base font-black text-white">تأكيد تسليم الطلب</h3>
+        <p class="text-xs text-slate-400 mt-1">هل تم تسليم الطلب للزبون بالكامل واستلام المبلغ نقداً؟</p>
+        <div id="complete-modal-amount" class="text-xl font-black text-emerald-400 mt-2 font-mono">0 د.ع</div>
+      </div>
+      <div class="flex items-center gap-2 pt-2">
+        <button onclick="confirmOrderDelivered()" id="confirm-deliver-btn" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition active:scale-95">
+          نعم، تم التسليم بنجاح 🚀
+        </button>
+        <button onclick="closeCompleteModal()" class="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 transition">
+          إلغاء
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- توست الإشعارات السريعة (Toast notification) -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-slate-700 text-white text-xs font-bold py-2.5 px-5 rounded-2xl shadow-2xl opacity-0 pointer-events-none transition-all duration-300 flex items-center gap-2">
+    <span id="toast-icon">ℹ️</span>
+    <span id="toast-msg">رسالة إشعار</span>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 6. برمجة صفحة السائق والنظام اللحظي -->
+  <!-- ========================================== -->
+  <script>
+    // ===== إعدادات عامة وجلسة السائق =====
+    const SUPABASE_URL = localStorage.getItem('smart_emenu_supabase_url') || (window.__ENV__ && window.__ENV__.SUPABASE_URL) || 'https://vyeolhhipsdcnntfbksy.supabase.co';
+    const SUPABASE_KEY = localStorage.getItem('smart_emenu_supabase_anon_key') || (window.__ENV__ && window.__ENV__.SUPABASE_ANON_KEY) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5ZW9saGhpcHNkY25udGZia3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNDk2MDksImV4cCI6MjEwNDYyNTYwOX0.mLBkQh2r1iCarmWU76xrQVQprq305hnDAK95nMe1yh8';
+    
+    let supabaseClient = null;
+    if (window.supabase && typeof window.supabase.createClient === 'function') {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeRestaurantId = (urlParams.get('rest') || '').toLowerCase();
+
+    // جلب معلومات جلسة السائق
+    let currentDriver = {
+      id: localStorage.getItem('smart_emenu_driver_id') || 'u_driver_1',
+      name: localStorage.getItem('smart_emenu_driver_name') || 'مندوب توصيل منصة بَنان',
+      phone: ''
+    };
+
+    try {
+      const sessRaw = sessionStorage.getItem('smart_emenu_active_session') || localStorage.getItem('smart_emenu_active_session');
+      if (sessRaw) {
+        const parsed = JSON.parse(sessRaw);
+        if (parsed.userId) currentDriver.id = parsed.userId;
+        if (parsed.name) currentDriver.name = parsed.name;
+      }
+    } catch(e) {}
+
+    // تحديث الواجهة باسم السائق
+    document.getElementById('driver-name-display').textContent = currentDriver.name;
+
+    // حالة التبويب الحالي: 'active' | 'available' | 'completed'
+    let currentTab = 'active';
+    let allOrders = [];
+    let audioAlertsEnabled = localStorage.getItem('driver_audio_alerts') !== 'false';
+    let pendingCompleteOrderId = null;
+
+    // تهيئة محرك الصوت (Web Audio API)
+    let audioCtx = null;
+    function playBeep(freq = 587.33, duration = 0.25, type = 'sine') {
+      if (!audioAlertsEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch(e) {}
+    }
+
+    function playNewOrderSound() {
+      playBeep(523.25, 0.15, 'triangle');
+      setTimeout(() => playBeep(659.25, 0.15, 'triangle'), 150);
+      setTimeout(() => playBeep(783.99, 0.35, 'triangle'), 300);
+    }
+
+    function playSuccessSound() {
+      playBeep(523.25, 0.12, 'sine');
+      setTimeout(() => playBeep(659.25, 0.12, 'sine'), 120);
+      setTimeout(() => playBeep(1046.50, 0.4, 'sine'), 240);
+    }
+
+    function toggleAudioAlerts() {
+      audioAlertsEnabled = !audioAlertsEnabled;
+      localStorage.setItem('driver_audio_alerts', audioAlertsEnabled ? 'true' : 'false');
+      const btn = document.getElementById('audio-toggle-btn');
+      if (audioAlertsEnabled) {
+        btn.textContent = '🔔';
+        btn.className = 'p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 transition';
+        showToast('تم تفعيل التنبيه الصوتي للطلبات 🔔', 'success');
+        playBeep(880, 0.1);
+      } else {
+        btn.textContent = '🔕';
+        btn.className = 'p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-500 border border-slate-700 transition';
+        showToast('تم كتم التنبيه الصوتي 🔕', 'info');
+      }
+    }
+
+    // إظهار توست للمستخدم
+    function showToast(msg, type = 'info') {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-msg');
+      const toastIcon = document.getElementById('toast-icon');
+      toastMsg.textContent = msg;
+      toastIcon.textContent = type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️');
+      toast.classList.remove('opacity-0', 'pointer-events-none');
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'pointer-events-none');
+      }, 3000);
+    }
+
+    // نسخ العنوان للمحفظة
+    function copyTextToClipboard(text, label = 'العنوان') {
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(`تم نسخ ${label} بنجاح! 📋`, 'success');
+        });
+      } else {
+        const inp = document.createElement('textarea');
+        inp.value = text;
+        document.body.appendChild(inp);
+        inp.select();
+        document.execCommand('copy');
+        document.body.removeChild(inp);
+        showToast(`تم نسخ ${label} بنجاح! 📋`, 'success');
+      }
+    }
+
+    // ===== التبديل بين التبويبات =====
+    function switchTab(tab) {
+      currentTab = tab;
+      
+      const btnActive = document.getElementById('tab-btn-active');
+      const btnAvail = document.getElementById('tab-btn-available');
+      const btnComp = document.getElementById('tab-btn-completed');
+
+      const activeCls = 'flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-1.5 bg-sky-600 text-white shadow-lg shadow-sky-600/30';
+      const inactiveCls = 'flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 bg-slate-900 text-slate-400 hover:text-white border border-slate-800';
+
+      btnActive.className = (tab === 'active') ? activeCls : inactiveCls;
+      btnAvail.className = (tab === 'available') ? activeCls : inactiveCls;
+      btnComp.className = (tab === 'completed') ? activeCls : inactiveCls;
+
+      renderFilteredOrders();
+    }
+
+    // ===== جلب الطلبات من Supabase مع الذاكرة الاحتياطية =====
+    async function loadOrders(isManualRefresh = false) {
+      const loadingEl = document.getElementById('loading-state');
+      const listEl = document.getElementById('orders-list-container');
+      const emptyEl = document.getElementById('empty-state');
+
+      if (isManualRefresh) {
+        showToast('جاري تحديث الطلبات...', 'info');
+      }
+
+      try {
+        let fetchedOrders = [];
+
+        // 1. المحاولة عبر Supabase
+        if (supabaseClient) {
+          // فلترة أمان إضافية: التأكد من أن الطلب ينتمي لنفس مطعم السائق
+          const driverSession = typeof AuthCore !== 'undefined' ? AuthCore.getCurrentSession() : null;
+          const driverRestId = driverSession?.restaurantId || activeRestaurantId;
+          const { data, error } = await supabaseClient
+            .from('restaurant_orders')
+            .select('*')
+            .eq('restaurant_id', driverRestId)
+            .or('type.eq.delivery,order_type.eq.delivery')
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+          if (!error && data) {
+            fetchedOrders = data;
+          }
+        }
+
+        // 2. إذا لم نجد طلبات، فحص localStorage كاحتياط
+        if (!fetchedOrders || fetchedOrders.length === 0) {
+          const localKeys = [
+            `smart_emenu_${activeRestaurantId}_orders`,
+            'smart_emenu_fahma_dokhan_orders',
+            'orders'
+          ];
+          for (const k of localKeys) {
+            try {
+              const raw = localStorage.getItem(k);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length) {
+                  fetchedOrders = parsed.filter(o => o.type === 'delivery' || o.order_type === 'delivery');
+                  if (fetchedOrders.length) break;
+                }
+              }
+            } catch(e) {}
+          }
+        }
+
+        allOrders = fetchedOrders || [];
+        updateStats();
+        renderFilteredOrders();
+
+        if (isManualRefresh) {
+          showToast(`تم التحديث! ${allOrders.length} طلبات توصيل مسجلة`, 'success');
+        }
+
+      } catch (err) {
+        console.error('Error loading driver orders:', err);
+        showToast('تعذر جلب الطلبات من الخادم', 'error');
+      } finally {
+        if (loadingEl) loadingEl.classList.add('hidden');
+      }
+    }
+
+    // ===== تحديث بطاقات الإحصائيات =====
+    function updateStats() {
+      // طلباتي قيد التوصيل: إما delivery_status = 'out_for_delivery' ومطابقة لمعرف السائق
+      const myActive = allOrders.filter(o => {
+        return (o.delivery_status === 'out_for_delivery' || o.status === 'out_for_delivery') &&
+               (!o.driver_id || o.driver_id === currentDriver.id || o.driver_id === 'u_driver_1');
+      });
+
+      // طلبات متاحة: طلبات توصيل لم يتم تسليمها ولم تخرج بعد مع سائق آخر
+      const available = allOrders.filter(o => {
+        const isNotDelivered = o.delivery_status !== 'delivered' && o.status !== 'completed' && o.status !== 'cancelled';
+        const isNotWithOtherDriver = !o.driver_id || (o.driver_id === currentDriver.id && o.delivery_status !== 'out_for_delivery');
+        const isNotActiveMine = !myActive.some(m => m.id === o.id);
+        return isNotDelivered && isNotWithOtherDriver && isNotActiveMine;
+      });
+
+      // مسلّمة اليوم
+      const delivered = allOrders.filter(o => {
+        return o.delivery_status === 'delivered' || o.status === 'completed';
+      });
+
+      // طلباتي المسلمة الخاصة بي (لحساب العهدة اليومية)
+      const myDelivered = delivered.filter(o => {
+        return (!o.driver_id || o.driver_id === currentDriver.id || o.driver_id === 'u_driver_1') && !o.driver_settled;
+      });
+
+      const totalCashInHand = myDelivered.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0);
+      const totalFeesEarned = myDelivered.reduce((sum, o) => sum + (parseFloat(o.deliveryFee || o.delivery_fee || 0) || 0), 0);
+      const netPayable = Math.max(0, totalCashInHand - totalFeesEarned);
+
+      // إجمالي مبالغ التحصيل للطلبات النشطة
+      const totalCash = myActive.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0);
+
+      document.getElementById('stat-active-count').textContent = myActive.length;
+      document.getElementById('stat-available-count').textContent = available.length;
+      document.getElementById('stat-delivered-count').textContent = delivered.length;
+      document.getElementById('stat-collected-total').textContent = totalCash.toLocaleString() + ' د.ع';
+
+      const cashInHandEl = document.getElementById('wallet-cash-in-hand');
+      if (cashInHandEl) cashInHandEl.textContent = totalCashInHand.toLocaleString() + ' د.ع';
+
+      const feesEarnedEl = document.getElementById('wallet-fees-earned');
+      if (feesEarnedEl) feesEarnedEl.textContent = totalFeesEarned.toLocaleString() + ' د.ع';
+
+      const netPayableEl = document.getElementById('wallet-net-payable');
+      if (netPayableEl) netPayableEl.textContent = netPayable.toLocaleString() + ' د.ع';
+
+      document.getElementById('badge-active-tab').textContent = myActive.length;
+      document.getElementById('badge-available-tab').textContent = available.length;
+      document.getElementById('badge-completed-tab').textContent = delivered.length;
+    }
+
+    // ===== رسم وتصفية الطلبات حسب التبويب المختار =====
+    function renderFilteredOrders() {
+      const container = document.getElementById('orders-list-container');
+      const emptyState = document.getElementById('empty-state');
+      const emptyTitle = document.getElementById('empty-state-title');
+      const emptyDesc = document.getElementById('empty-state-desc');
+      const emptyIcon = document.getElementById('empty-state-icon');
+
+      let list = [];
+
+      if (currentTab === 'active') {
+        list = allOrders.filter(o => {
+          return (o.delivery_status === 'out_for_delivery' || o.status === 'out_for_delivery') &&
+                 (!o.driver_id || o.driver_id === currentDriver.id || o.driver_id === 'u_driver_1');
+        });
+        emptyTitle.textContent = 'لا توجد طلبات قيد التوصيل معك حالياً';
+        emptyDesc.textContent = 'انتقل لتبويب "طلبات متاحة جديدة" لاستلام وتوصيل طلبات الزبائن';
+        emptyIcon.textContent = '🛵';
+      } else if (currentTab === 'available') {
+        list = allOrders.filter(o => {
+          const isNotDelivered = o.delivery_status !== 'delivered' && o.status !== 'completed' && o.status !== 'cancelled';
+          const isMineOut = (o.delivery_status === 'out_for_delivery' || o.status === 'out_for_delivery') && (o.driver_id === currentDriver.id || !o.driver_id);
+          return isNotDelivered && !isMineOut;
+        });
+        emptyTitle.textContent = 'لا توجد طلبات جديدة متاحة للتوصيل حالياً';
+        emptyDesc.textContent = 'ستظهر هنا أية طلبات توصيل جديدة يطلبها الزبائن فوراً';
+        emptyIcon.textContent = '📦';
+      } else if (currentTab === 'completed') {
+        list = allOrders.filter(o => o.delivery_status === 'delivered' || o.status === 'completed');
+        emptyTitle.textContent = 'سجل التوصيل فارغ اليوم';
+        emptyDesc.textContent = 'ستظهر هنا كافة الطلبات التي قمت بتسليمها بنجاح';
+        emptyIcon.textContent = '✅';
+      }
+
+      if (list.length === 0) {
+        container.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      container.classList.remove('hidden');
+
+      container.innerHTML = list.map(order => createOrderCardHtml(order)).join('');
+    }
+
+    // ===== إنشاء بطاقة الطلب HTML مع روابط خرائط ويز وكوكل =====
+    function createOrderCardHtml(order) {
+      const orderId = order.id || 'ord_0';
+      const shortId = '#' + String(orderId).replace('ord_', '').slice(-6);
+      const custName = order.customer_name || order.customerName || order.customerInfo || 'زبون غير محدد';
+      const custPhone = order.customer_phone || order.customerPhone || '';
+      const custAddress = order.customer_address || order.customerAddress || order.address || 'العنوان غير مسجل بالتفصيل';
+      const totalAmount = parseFloat(order.total || 0).toLocaleString();
+      const deliveryFee = parseFloat(order.delivery_fee || order.deliveryFee || 2000).toLocaleString();
+      
+      // التوقيت
+      let timeText = 'الآن';
+      if (order.created_at) {
+        try {
+          const mins = Math.max(1, Math.round((Date.now() - new Date(order.created_at).getTime()) / 60000));
+          timeText = mins > 60 ? `منذ ${Math.round(mins/60)} ساعة` : `منذ ${mins} دقيقة`;
+        } catch(e) {}
+      }
+
+      // إحداثيات GPS وموقع الزبون
+      let coords = null;
+      if (order.customer_coords) {
+        if (typeof order.customer_coords === 'string') {
+          try { coords = JSON.parse(order.customer_coords); } catch(e){}
+        } else if (typeof order.customer_coords === 'object') {
+          coords = order.customer_coords;
+        }
+      }
+
+      const hasCoords = coords && coords.lat && coords.lng;
+      
+      // تجهيز روابط الملاحة التلقائية (Google Maps & Waze)
+      let googleMapsUrl = '';
+      let wazeUrl = '';
+
+      if (hasCoords) {
+        // فتح الملاحة المباشرة بالإحداثيات الدقيقة
+        googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}`;
+        wazeUrl = `https://waze.com/ul?ll=${coords.lat},${coords.lng}&navigate=yes`;
+      } else {
+        // فتح الملاحة بالبحث النصي عن العنوان
+        const searchAddr = encodeURIComponent(custAddress + ' بغداد العراق');
+        googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${searchAddr}`;
+        wazeUrl = `https://waze.com/ul?q=${searchAddr}&navigate=yes`;
+      }
+
+      // رقم هاتف الزبون للتواصل المباشر
+      const cleanPhone = custPhone.replace(/[^0-9]/g, '');
+      const waPhone = cleanPhone.startsWith('0') ? '964' + cleanPhone.substring(1) : cleanPhone;
+
+      // عناصر الوجبات
+      const items = Array.isArray(order.items) ? order.items : [];
+      const itemsHtml = items.map(it => `
+        <div class="flex justify-between items-center text-xs py-1 border-b border-slate-800/60 last:border-0">
+          <span class="text-slate-300 font-bold">${it.quantity || 1}x ${it.name}</span>
+          <span class="text-slate-400 font-mono">${((it.price || 0) * (it.quantity || 1)).toLocaleString()} د.ع</span>
+        </div>
+      `).join('');
+
+      // شارة الحالة
+      let statusBadge = '';
+      if (order.delivery_status === 'delivered' || order.status === 'completed') {
+        statusBadge = '<span class="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-black">✅ تم التسليم بنجاح</span>';
+      } else if (order.delivery_status === 'out_for_delivery' || order.status === 'out_for_delivery') {
+        statusBadge = '<span class="px-2.5 py-1 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-black">🛵 جاري التوصيل للزبون</span>';
+      } else {
+        statusBadge = '<span class="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-black">📦 بانتظار استلام السائق</span>';
+      }
+
+      // أزرار العمليات
+      let actionButtonsHtml = '';
+      if (currentTab === 'available') {
+        actionButtonsHtml = `
+          <button onclick="acceptOrderForDelivery('${orderId}')" class="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-black text-sm shadow-xl shadow-sky-600/30 transition flex items-center justify-center gap-2 active:scale-95">
+            <span>🛵 استلام وبدء التوصيل الآن</span>
+          </button>
+        `;
+      } else if (currentTab === 'active') {
+        actionButtonsHtml = `
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+            <button onclick="openCompleteModal('${orderId}', '${totalAmount}')" class="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm shadow-xl shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95">
+              <span>✅ تم تسليم الطلب واستلام الحساب</span>
+            </button>
+            <button onclick="unassignOrder('${orderId}')" class="py-3 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700 transition flex items-center justify-center gap-1.5 active:scale-95">
+              <span>إلغاء الاستلام / إعادة للمطعم ↩️</span>
+            </button>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="order-card rounded-3xl p-5 space-y-4 shadow-xl" id="card-${orderId}">
+          
+          <!-- الهيدر: رقم الطلب + التوقيت + الشارة -->
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-base font-black text-white font-mono">${shortId}</span>
+                <span class="text-xs text-slate-400 font-medium">🕒 ${timeText}</span>
+              </div>
+            </div>
+            <div>${statusBadge}</div>
+          </div>
+
+          <!-- تفاصيل الزبون والعنوان -->
+          <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800/80 space-y-3">
+            
+            <!-- الاسم ورقم الهاتف -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center text-sm">👤</span>
+                <div>
+                  <div class="text-xs font-black text-white">${custName}</div>
+                  <div class="text-[11px] text-slate-400 font-mono" dir="ltr">${custPhone || 'لا يوجد هاتف'}</div>
+                </div>
+              </div>
+
+              <!-- أزرار الاتصال السريع -->
+              ${custPhone ? `
+                <div class="flex items-center gap-2 pt-1 sm:pt-0">
+                  <a href="tel:${custPhone}" class="py-1.5 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition flex items-center gap-1">
+                    <span>📞 اتصال</span>
+                  </a>
+                  <a href="https://wa.me/${waPhone}" target="_blank" class="py-1.5 px-3 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 text-teal-400 border border-teal-500/30 text-xs font-bold transition flex items-center gap-1">
+                    <span>💬 واتساب</span>
+                  </a>
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- العنوان بالتفصيل -->
+            <div class="border-t border-slate-800/80 pt-2 space-y-1">
+              <div class="text-[11px] text-slate-400 font-bold flex items-center justify-between">
+                <span class="flex items-center gap-1">📍 عنوان وتفاصيل التوصيل:</span>
+                <button onclick="copyTextToClipboard('${custAddress.replace(/'/g, "\\'")}', 'العنوان')" class="text-sky-400 hover:text-sky-300 text-[10px] flex items-center gap-1 font-bold">
+                  <span>📋 نسخ العنوان</span>
+                </button>
+              </div>
+              <p class="text-xs text-slate-200 font-medium leading-relaxed bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                ${custAddress}
+              </p>
+            </div>
+
+            <!-- أزرار الخرائط والملاحة (Google Maps & Waze) -->
+            <div class="pt-1">
+              <div class="text-[11px] text-slate-400 font-bold mb-2 flex items-center gap-1.5">
+                <span>🧭</span>
+                <span>تتبع وتوجيه الملاحة الفوري:</span>
+                ${hasCoords ? '<span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">GPS دقيق 🎯</span>' : '<span class="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">بحث بالعنوان 🔍</span>'}
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                
+                <!-- زر Google Maps -->
+                <a href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-sky-500/40 hover:border-sky-400 text-sky-300 font-black text-xs transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 text-center">
+                  <span class="text-base">🗺️</span>
+                  <span>خرائط Google Maps</span>
+                </a>
+
+                <!-- زر Waze -->
+                <a href="${wazeUrl}" target="_blank" rel="noopener noreferrer" class="py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-indigo-500/40 hover:border-indigo-400 text-indigo-300 font-black text-xs transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 text-center">
+                  <span class="text-base">🚗</span>
+                  <span>تطبيق Waze</span>
+                </a>
+
+              </div>
+            </div>
+
+          </div>
+
+          <!-- تفاصيل الوجبات والمبلغ المطلوب تحصيله -->
+          <div class="bg-slate-950/40 p-3.5 rounded-2xl border border-slate-800/80 space-y-2">
+            <details class="cursor-pointer group">
+              <summary class="text-xs font-bold text-slate-400 flex items-center justify-between select-none">
+                <span>🍽️ محتويات الوجبة (${items.length} أصناف)</span>
+                <span class="text-[10px] text-sky-400 group-open:rotate-180 transition-transform">▼ عرض</span>
+              </summary>
+              <div class="mt-2.5 space-y-1">
+                ${itemsHtml || '<p class="text-xs text-slate-500">تفاصيل الأصناف غير متوفرة</p>'}
+              </div>
+            </details>
+
+            <!-- المبالغ -->
+            <div class="border-t border-slate-800 pt-2 flex items-center justify-between">
+              <div>
+                <span class="text-[11px] text-slate-400 block">المبلغ المطلوب تحصيله نقداً:</span>
+                <span class="text-[10px] text-slate-500">(يشمل أجور التوصيل: ${deliveryFee} د.ع)</span>
+              </div>
+              <div class="text-lg font-black text-emerald-400 font-mono">${totalAmount} د.ع</div>
+            </div>
+          </div>
+
+          <!-- أزرار اتخاذ القرار (قبول / تسليم) -->
+          ${actionButtonsHtml}
+
+        </div>
+      `;
+    }
+
+    // ===== 1. استلام الطلب للتوصيل (Accept Order) =====
+    async function acceptOrderForDelivery(orderId) {
+      if (!orderId) return;
+
+      showToast('جاري استلام وتثبيت الطلب باسمك... ⏳', 'info');
+
+      const updateData = {
+        delivery_status: 'out_for_delivery',
+        driver_id: currentDriver.id,
+        driver_name: currentDriver.name,
+        updated_at: new Date().toISOString()
+      };
+
+      try {
+        if (supabaseClient) {
+          const { error } = await supabaseClient
+            .from('restaurant_orders')
+            .update(updateData)
+            .eq('id', orderId);
+
+          if (error) console.error('Supabase accept error:', error);
+        }
+
+        // تحديث محلي فوري
+        updateLocalOrder(orderId, updateData);
+
+        // إشعار وصوت تشجيعي
+        playNewOrderSound();
+        showToast('تم استلام الطلب بنجاح! رافقتك السلامة 🛵', 'success');
+
+        // الانتقال تلقائياً لتبويب "طلباتي قيد التوصيل"
+        switchTab('active');
+        loadOrders(false);
+
+      } catch (err) {
+        console.error('Error accepting order:', err);
+        showToast('حدث خطأ أثناء قبول الطلب', 'error');
+      }
+    }
+
+    // ===== 2. فتح نافذة تأكيد تسليم الطلب =====
+    function openCompleteModal(orderId, amount) {
+      pendingCompleteOrderId = orderId;
+      document.getElementById('complete-modal-amount').textContent = amount + ' د.ع';
+      document.getElementById('complete-modal').classList.remove('hidden');
+    }
+
+    function closeCompleteModal() {
+      pendingCompleteOrderId = null;
+      document.getElementById('complete-modal').classList.add('hidden');
+    }
+
+    // ===== 3. تأكيد تسليم الطلب (Complete Delivery) =====
+    async function confirmOrderDelivered() {
+      if (!pendingCompleteOrderId) return;
+      const orderId = pendingCompleteOrderId;
+      const btn = document.getElementById('confirm-deliver-btn');
+      btn.disabled = true;
+      btn.textContent = 'جاري الحفظ... ⏳';
+
+      const updateData = {
+        delivery_status: 'delivered',
+        status: 'completed',
+        updated_at: new Date().toISOString()
+      };
+
+      try {
+        if (supabaseClient) {
+          const { error } = await supabaseClient
+            .from('restaurant_orders')
+            .update(updateData)
+            .eq('id', orderId);
+
+          if (error) console.error('Supabase deliver error:', error);
+        }
+
+        // تحديث محلي
+        updateLocalOrder(orderId, updateData);
+
+        playSuccessSound();
+        closeCompleteModal();
+        showToast('عاش أيدك! تم تسليم الطلب وأرشفته بنجاح ✅', 'success');
+
+        loadOrders(false);
+
+      } catch (err) {
+        console.error('Error completing order:', err);
+        showToast('تعذر تأكيد التسليم، يرجى المحاولة ثانية', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'نعم، تم التسليم بنجاح 🚀';
+      }
+    }
+
+    // ===== 4. إلغاء استلام الطلب / إعادة إتاحته =====
+    async function unassignOrder(orderId) {
+      if (!confirm('هل أنت متأكد من رغبتك بإعادة الطلب للمطعم ليتسلمه سائق آخر؟')) return;
+
+      const updateData = {
+        delivery_status: 'received',
+        driver_id: null,
+        driver_name: null,
+        updated_at: new Date().toISOString()
+      };
+
+      try {
+        if (supabaseClient) {
+          await supabaseClient
+            .from('restaurant_orders')
+            .update(updateData)
+            .eq('id', orderId);
+        }
+
+        updateLocalOrder(orderId, updateData);
+        showToast('تمت إعادة إتاحة الطلب في القائمة العامة', 'info');
+        loadOrders(false);
+      } catch (err) {
+        console.error('Error unassigning order:', err);
+      }
+    }
+
+    // تحديث الطلب في localStorage
+    function updateLocalOrder(orderId, fields) {
+      const idx = allOrders.findIndex(o => o.id === orderId);
+      if (idx !== -1) {
+        allOrders[idx] = { ...allOrders[idx], ...fields };
+      }
+
+      const localKeys = [
+        `smart_emenu_${activeRestaurantId}_orders`,
+        'smart_emenu_fahma_dokhan_orders'
+      ];
+      localKeys.forEach(k => {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            let parsed = JSON.parse(raw);
+            const pIdx = parsed.findIndex(o => o.id === orderId);
+            if (pIdx !== -1) {
+              parsed[pIdx] = { ...parsed[pIdx], ...fields };
+              localStorage.setItem(k, JSON.stringify(parsed));
+            }
+          }
+        } catch(e) {}
+      });
+    }
+
+    // ===== 5. الاشتراك اللحظي في Supabase Realtime =====
+    function initRealtimeSync() {
+      if (!supabaseClient) return;
+
+      try {
+        const channel = supabaseClient
+          .channel('driver_realtime_orders_' + activeRestaurantId)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'restaurant_orders',
+              filter: `restaurant_id=eq.${activeRestaurantId}`
+            },
+            (payload) => {
+              console.log('Realtime change received for driver:', payload);
+              
+              if (payload.eventType === 'INSERT') {
+                const newRow = payload.new;
+                if (newRow && (newRow.type === 'delivery' || newRow.order_type === 'delivery')) {
+                  playNewOrderSound();
+                  showToast('طلب توصيل جديد وصل للمطعم! 🔔', 'info');
+                }
+              }
+
+              loadOrders(false);
+            }
+          )
+          .subscribe((status) => {
+            const badge = document.getElementById('realtime-status-badge');
+            if (status === 'SUBSCRIBED') {
+              badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 pulse-dot inline-block"></span><span>متصل لحظياً</span>';
+              badge.className = 'flex items-center gap-1 text-[11px] text-emerald-400 font-semibold';
+            } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+              badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-500 inline-block"></span><span>وضع غير مباشر</span>';
+              badge.className = 'flex items-center gap-1 text-[11px] text-amber-400 font-semibold';
+            }
+          });
+      } catch (err) {
+        console.warn('Realtime subscription warning:', err);
+      }
+    }
+
+    // ===== 6. تسجيل خروج السائق =====
+    function handleDriverLogout() {
+      if (!confirm('هل تريد تسجيل الخروج من بوابة السائق؟')) return;
+
+      const keysToRemove = [
+        'smart_emenu_active_session',
+        'driver_session',
+        `smart_emenu_${activeRestaurantId}_session`,
+        'smart_emenu_session',
+        'smart_emenu_fahma_dokhan_session'
+      ];
+      keysToRemove.forEach(k => {
+        sessionStorage.removeItem(k);
+        localStorage.removeItem(k);
+      });
+
+      window.location.replace(`login.html?role=driver&rest=${encodeURIComponent(activeRestaurantId)}&logout=true`);
+    }
+
+    // فحص دوري للطلبات كل 15 ثانية كضمان إضافي
+    setInterval(() => {
+      loadOrders(false);
+    }, 15000);
+
+    // بدء التشغيل عند تحميل المستند
+    document.addEventListener('DOMContentLoaded', () => {
+      loadOrders(false);
+      initRealtimeSync();
+
+      // تهيئة زر الصوت
+      const audioBtn = document.getElementById('audio-toggle-btn');
+      if (audioBtn) {
+        audioBtn.textContent = audioAlertsEnabled ? '🔔' : '🔕';
+      }
+    });
+  </script>
+
+  <!-- PWA Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('sw.js').catch(function() {});
+      });
+    }
+  </script>
+</body>
+</html>

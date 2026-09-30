@@ -48,12 +48,6 @@ function getSupabase() {
   return supabaseClient;
 }
 
-function getSupabaseClient() {
-  return getSupabase();
-}
-window.getSupabase = getSupabase;
-window.getSupabaseClient = getSupabase;
-
 // دوال التحكم بتغيير السحابة
 window.setSupabaseConfig = function(url, key) {
   if (url && url.trim()) localStorage.setItem('smart_emenu_supabase_url', url.trim());
@@ -83,22 +77,7 @@ function getActiveRestaurantId() {
     const qRest = params.get('rest') || params.get('restaurant');
     if (qRest && qRest.trim()) {
       const clean = qRest.trim().toLowerCase();
-      if (clean === 'platform_market') {
-        if (typeof window !== 'undefined' && window.location) {
-          const p = window.location.pathname.toLowerCase();
-          if (p.endsWith('index.html') || p === '/' || p.endsWith('/') || !p.includes('.html')) {
-            if (!window._redirectingToPlatform) {
-              window._redirectingToPlatform = true;
-              window.location.replace('platform-menu.html');
-            }
-            return 'platform_market';
-          }
-        }
-      }
-      try { 
-        sessionStorage.setItem('smart_emenu_restaurant_id', clean); 
-        localStorage.setItem('smart_emenu_last_active_restaurant', clean);
-      } catch (e) {}
+      try { sessionStorage.setItem('smart_emenu_restaurant_id', clean); } catch (e) {}
       return clean;
     }
     const sRest = sessionStorage.getItem('smart_emenu_restaurant_id');
@@ -117,8 +96,7 @@ function getActiveRestaurantId() {
     }
   } catch (e) {}
 
-  // إذا لم يُحدد مطعم في الرابط ولم توجد جلسة سابقة، التوجيه الذكي للمطعم الافتراضي
-  try { sessionStorage.setItem('smart_emenu_restaurant_id','fahma_dokhan'); } catch(e) {}
+  try { sessionStorage.setItem('smart_emenu_restaurant_id','fahma_dokhan'); } catch(e) {} 
   return 'fahma_dokhan';
 }
 
@@ -128,6 +106,27 @@ function setActiveRestaurantId(id) {
   try {
     sessionStorage.setItem('smart_emenu_restaurant_id', clean);
   } catch (e) {}
+}
+
+// -------------------------------------------------------------
+// تحديث نصوص وهوية المطعم في تطبيق الكابتن
+// -------------------------------------------------------------
+function updateAppBranding() {
+  const config = typeof getStoredData === 'function' ? getStoredData('config', DEFAULT_RESTAURANT_CONFIG) : DEFAULT_RESTAURANT_CONFIG;
+  document.querySelectorAll('.brand-restaurant-name').forEach(el => el.textContent = config.name);
+  document.querySelectorAll('.brand-restaurant-tagline').forEach(el => el.textContent = config.tagline);
+  document.querySelectorAll('.brand-currency').forEach(el => el.textContent = config.currency);
+  
+  const capRestName = document.getElementById('captain-restaurant-name');
+  if (capRestName) capRestName.textContent = config.name;
+
+  const logoTarget = (config.logo && config.logo.trim()) ? config.logo.trim() : 'logo.svg';
+  document.querySelectorAll('.restaurant-logo-img').forEach(img => {
+    if (img.getAttribute('src') !== logoTarget) {
+      img.src = logoTarget;
+    }
+    img.onerror = () => { img.src = 'logo.svg'; img.onerror = null; };
+  });
 }
 
 // -------------------------------------------------------------
@@ -148,43 +147,82 @@ async function checkRestaurantSubscription() {
 
     if (!error && data && data.length > 0) {
       const rest = data[0];
+      const plan = rest.subscription_plan || rest.plan_type || 'pro';
 
-      // إذا كان المطعم موقوفاً أو منتهي الاشتراك (is_active === false)
-      if (rest.is_active === false) {
-        showSubscriptionLockScreen(rest);
+      // 1. فحص حالة التفعيل وتاريخ انتهاء باقة الاشتراك تلقائياً
+      const isDateExpired = rest.subscription_end_date && (new Date(rest.subscription_end_date).getTime() < Date.now());
+      if (rest.is_active === false || isDateExpired) {
+        showSubscriptionLockScreen(rest, 'expired');
         return { active: false, restaurant: rest };
-      } else {
-        hideSubscriptionLockScreen();
+      }
 
-        // مزامنة حالة الباقات ونوع الخطة في التخزين المحلي فوراً
-        const localConfig = typeof getStoredData === 'function' ? getStoredData('config', {}) : {};
-        if (typeof setStoredData === 'function' && localConfig) {
-          const plan = rest.subscription_plan || rest.plan_type || 'pro';
-          localConfig.planType = plan;
-          localConfig.subscriptionPlan = plan;
-          if (plan === 'basic') {
-            localConfig.allowDineInOrders = false;
-            localConfig.allowTakeawayOrders = false;
-            localConfig.takeawayPackageActive = false;
-          } else {
-            localConfig.allowDineInOrders = !!rest.allow_dinein_orders;
-            localConfig.allowTakeawayOrders = rest.allow_takeaway_orders !== false;
-            localConfig.takeawayPackageActive = rest.takeaway_package_active !== false;
-          }
-          if (rest.logo !== undefined && rest.logo !== null && rest.logo.trim() !== '') {
-            localConfig.logo = rest.logo.trim();
-          } else if (rest.logo !== undefined) {
-            localConfig.logo = 'logo.svg';
-          }
-          setStoredData('config', localConfig);
-          if (typeof updateAppBranding === 'function') updateAppBranding();
+      // 2. إذا كانت باقة المطعم هي الباقة الأساسية (basic) - لا يحق له الدخول للكابتن إطلاقاً
+      if (plan === 'basic') {
+        showSubscriptionLockScreen(rest, 'plan_restricted');
+        return { active: false, restaurant: rest };
+      }
+
+      hideSubscriptionLockScreen();
+
+      // مزامنة حالة الباقات وكافة بيانات المطعم في التخزين المحلي فوراً
+      const localConfig = typeof getStoredData === 'function' ? getStoredData('config', {}) : {};
+      if (typeof setStoredData === 'function' && localConfig) {
+        localConfig.planType = plan;
+        localConfig.subscriptionPlan = plan;
+        localConfig.allowDineInOrders = !!rest.allow_dinein_orders;
+        localConfig.allowTakeawayOrders = rest.allow_takeaway_orders !== false;
+        localConfig.takeawayPackageActive = rest.takeaway_package_active !== false;
+
+        if (rest.name) localConfig.name = rest.name;
+        if (rest.name_en) localConfig.nameEn = rest.name_en;
+        if (rest.tagline) localConfig.tagline = rest.tagline;
+        if (rest.tagline_en) localConfig.taglineEn = rest.tagline_en;
+        if (rest.phone) localConfig.phone = rest.phone;
+        if (rest.phone2 !== undefined) localConfig.phone2 = rest.phone2 || '';
+        if (rest.whatsapp_url) localConfig.whatsappUrl = rest.whatsapp_url;
+        if (rest.whatsapp_number) localConfig.whatsappNumber = rest.whatsapp_number;
+        if (rest.address) localConfig.address = rest.address;
+        if (rest.maps_url || rest.map_url) localConfig.mapUrl = rest.maps_url || rest.map_url;
+        if (rest.working_hours) localConfig.workingHours = rest.working_hours;
+        if (rest.holidays) localConfig.holidays = rest.holidays;
+        if (rest.wifi_name) localConfig.wifiName = rest.wifi_name;
+        if (rest.wifi_pass) localConfig.wifiPass = rest.wifi_pass;
+        if (rest.tables_count) localConfig.tablesCount = Number(rest.tables_count);
+        if (rest.currency) localConfig.currency = rest.currency;
+        if (rest.logo !== undefined && rest.logo !== null && rest.logo.trim() !== '') {
+          localConfig.logo = rest.logo.trim();
+        } else if (rest.logo !== undefined) {
+          localConfig.logo = 'logo.svg';
         }
 
-        return { active: true, restaurant: rest };
+        setStoredData('config', localConfig);
+        updateAppBranding();
       }
+
+      return { active: true, restaurant: rest };
     }
   } catch (e) {
     console.warn("Subscription check offline:", e);
+  }
+
+  // اشتراك ومزامنة حية لبيانات المطعم في شاشة الكابتن
+  if (client && !window._captainRestaurantRealtimeSubscribed) {
+    window._captainRestaurantRealtimeSubscribed = true;
+    try {
+      client.channel('public:restaurants_captain_sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants' }, () => {
+          checkRestaurantSubscription();
+        })
+        .subscribe();
+    } catch(e) {}
+
+    window.addEventListener('focus', () => {
+      checkRestaurantSubscription();
+    });
+
+    setInterval(() => {
+      checkRestaurantSubscription();
+    }, 4000);
   }
 
   return { active: true };
@@ -193,47 +231,58 @@ async function checkRestaurantSubscription() {
 // -------------------------------------------------------------
 // شاشة القفل وتجديد الاشتراك والتواصل مع الدعم 07702265652
 // -------------------------------------------------------------
-function showSubscriptionLockScreen(rest) {
+function showSubscriptionLockScreen(rest, lockReason = 'expired') {
   let overlay = document.getElementById('subscription-locked-overlay');
   const supportPhone = rest?.support_phone || '07702265652';
+  const isPlanRestricted = lockReason === 'plan_restricted';
+
+  const badgeText = isPlanRestricted ? 'الترقية إلى باقة Pro مطلوبة 👑' : 'الاشتراك غير مفعّل / منتهي';
+  const titleText = isPlanRestricted ? 'شاشة كابتن الصالة غير متوفرة في باقتك' : 'يرجى تجديد الاشتراك';
+  const descText = isPlanRestricted
+    ? `عزيزي صاحب المطعم، اشتراكك الحالي هو <b>الباقة الأساسية (Basic - منيو فقط)</b>. شاشة كابتن الصالة والطلبات الفورية واستقبال نداء الطاولات متاحة حصرياً في <b>باقة Pro الاحترافية</b>. للترقية وتفعيل الكابتن فوراً، يرجى التواصل مع الدعم الفني.`
+    : `عزيزي صاحب المطعم، لقد تم إيقاف الخدمة مؤقتاً لتجديد الاشتراك أو ترقية الباقات. يرجى التواصل مع مكتب <b>emattec</b> لإعادة التفعيل الفوري.`;
+  const btnText = isPlanRestricted ? '👑 ترقية الباقة وتفعيل شاشة الكابتن الآن' : '📞 اتصال فوري لتجديد الاشتراك';
 
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'subscription-locked-overlay';
     overlay.className = 'fixed inset-0 z-[999999] bg-[#0b1120] flex items-center justify-center p-4 text-center overflow-y-auto';
     overlay.innerHTML = `
-      <div class="max-w-md w-full bg-slate-900 border-2 border-rose-500/50 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 my-auto">
+      <div class="max-w-md w-full bg-slate-900 border-2 ${isPlanRestricted ? 'border-amber-500/50' : 'border-rose-500/50'} rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 my-auto">
         
         <!-- لوجو مكتب emattec -->
-        <div class="w-24 h-24 rounded-3xl bg-white p-2 mx-auto shadow-2xl border-2 border-rose-500/30 flex items-center justify-center overflow-hidden">
+        <div class="w-24 h-24 rounded-3xl bg-white p-2 mx-auto shadow-2xl border-2 ${isPlanRestricted ? 'border-amber-500/30' : 'border-rose-500/30'} flex items-center justify-center overflow-hidden">
           <img src="emattec-logo.jpg" alt="emattec" class="w-full h-full object-contain" onerror="this.src='logo.svg'" />
         </div>
 
         <div class="space-y-2">
-          <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/20 text-rose-400 text-xs font-black rounded-full border border-rose-500/30">
-            <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
-            <span>الاشتراك غير مفعّل / منتهي</span>
+          <div class="inline-flex items-center gap-1.5 px-3 py-1 ${isPlanRestricted ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-rose-500/20 text-rose-400 border-rose-500/30'} text-xs font-black rounded-full border">
+            <span class="w-2 h-2 rounded-full ${isPlanRestricted ? 'bg-amber-500' : 'bg-rose-500'} animate-ping"></span>
+            <span id="sub-lock-badge-text">${badgeText}</span>
           </div>
-          <h2 class="text-2xl font-black text-white">يرجى تجديد الاشتراك</h2>
-          <p class="text-xs text-slate-300 leading-relaxed">
-            عزيزي صاحب المطعم، لقد تم إيقاف الخدمة مؤقتاً لتجديد الاشتراك أو ترقية الباقات. يرجى التواصل مع مكتب <b>emattec</b> لإعادة التفعيل الفوري.
+          <h2 id="sub-lock-title-text" class="text-2xl font-black text-white">${titleText}</h2>
+          <p id="sub-lock-desc-text" class="text-xs text-slate-300 leading-relaxed">
+            ${descText}
           </p>
         </div>
 
         <!-- بطاقة رقم الدعم والتجديد -->
         <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-1.5">
-          <div class="text-xs text-slate-400 font-bold">رقم الدعم الفني وتجديد الباقات:</div>
-          <div class="text-2xl font-black text-rose-400 font-mono tracking-wider">${supportPhone}</div>
+          <div class="text-xs text-slate-400 font-bold">رقم الدعم الفني وترقية الباقات:</div>
+          <div class="text-2xl font-black text-amber-400 font-mono tracking-wider">${supportPhone}</div>
           <div class="text-[11px] text-slate-500">مكتب emattec للحلول البرمجية والأنظمة الذكية</div>
         </div>
 
         <!-- أزرار التواصل والتجديد -->
         <div class="space-y-2 pt-1">
-          <a href="tel:${supportPhone}" class="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-black text-sm rounded-2xl shadow-xl shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95">
-            <span>📞 اتصال فوري لتجديد الاشتراك</span>
+          <a id="sub-lock-phone-btn" href="tel:${supportPhone}" class="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-black text-sm rounded-2xl shadow-xl shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95">
+            <span>${btnText}</span>
           </a>
-          <a href="https://wa.me/964${supportPhone.replace(/^0+/, '')}" target="_blank" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 flex items-center justify-center gap-2 transition">
-            <span>💬 تواصل عبر WhatsApp للتفعيل</span>
+          <a href="https://wa.me/964${supportPhone.replace(/^0+/, '')}?text=${encodeURIComponent('مرحباً، أرغب في ترقية باقة المطعم إلى باقة Pro لتفعيل شاشة الكابتن')}" target="_blank" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 flex items-center justify-center gap-2 transition">
+            <span>💬 تواصل عبر WhatsApp للترقية</span>
+          </a>
+          <a href="admin.html?rest=${encodeURIComponent(rest?.id || '')}" class="w-full py-2 bg-navy-950 hover:bg-slate-800 text-blue-400 hover:text-blue-300 text-xs font-bold rounded-xl border border-slate-800 flex items-center justify-center gap-1.5 transition">
+            <span>🏢 العودة للوحة تحكم إدارة الأطباق (Admin)</span>
           </a>
         </div>
 
@@ -244,6 +293,13 @@ function showSubscriptionLockScreen(rest) {
       </div>
     `;
     document.body.appendChild(overlay);
+  } else {
+    const badgeEl = document.getElementById('sub-lock-badge-text');
+    const titleEl = document.getElementById('sub-lock-title-text');
+    const descEl = document.getElementById('sub-lock-desc-text');
+    if (badgeEl) badgeEl.textContent = badgeText;
+    if (titleEl) titleEl.textContent = titleText;
+    if (descEl) descEl.innerHTML = descText;
   }
 
   overlay.classList.remove('hidden');
@@ -351,13 +407,14 @@ function preserveRestaurantParamInLinks() {
   } catch(e) {}
 }
 
-// تشغيل الفحص الدوري للاشتراك في كل الصفحات
+// تشغيل الفحص الدوري للاشتراك وتحديث الهوية في شاشة الكابتن
 document.addEventListener('DOMContentLoaded', () => {
   preserveRestaurantParamInLinks();
+  updateAppBranding();
   setTimeout(() => {
     checkRestaurantSubscription();
     preserveRestaurantParamInLinks();
-  }, 500);
+  }, 100);
 });
 
 /* === data.js === */
@@ -372,12 +429,11 @@ const DEFAULT_RESTAURANT_CONFIG = {
   taglineEn: "Delicious Charcoal Grills, Mansaf, Burgers & Western Sandwiches",
   currency: "د.ع",
   currencyEn: "IQD",
-  phone: "07755009771",
-  phone2: "07509009676",
-  mapUrl: "https://maps.app.goo.gl/dr2x5U7NFiFKXJnQ9?g_st=com.google.maps.preview.copy",
-  whatsappNumber: "07755009771",
-  whatsappUrl: "https://wa.me/9647755009771",
-  publishedUrl: "https://fahma-dokhan.netlify.app", 
+  phone: "+9647700000000",
+  phone2: "",
+  mapUrl: "",
+  whatsappNumber: "+9647700000000",
+  publishedUrl: "", 
   
   // خيارات وقفل الطلبات في المنيو (التحكم من لوحة الأدمن)
   allowDineInOrders: true,           // تفعيل الطلب الذاتي داخل الصالة
@@ -392,8 +448,8 @@ const DEFAULT_RESTAURANT_CONFIG = {
   adminPin: "",
   wifiName: "Fahma_Dokhan_WiFi",
   wifiPass: "fahma2026",
-  address: "العراق - نينوى - الشيماء",
-  workingHours: "10:00 صباحاً - 10:00 بعد منتصف الليل",
+  address: "العراق - نرحب بكم في صالتنا لتناول أشهى الوجبات",
+  workingHours: "12:00 ظهراً - 02:00 بعد منتصف الليل",
   holidays: "مفتوح طوال أيام الأسبوع",
   tablesCount: 20,
   taxRate: 0,
@@ -493,34 +549,11 @@ function getDefaultRestaurantConfig(restId) {
   return {
     name: "المنيو الرقمي الذكي",
     nameEn: "Smart E-Menu",
-    tagline: "جاري تحميل تفاصيل المنيو...",
-    taglineEn: "Loading menu details...",
+    tagline: "تطبيق كابتن الصالة",
     currency: "د.ع",
     currencyEn: "IQD",
-    phone: "",
-    phone2: "",
-    mapUrl: "",
-    whatsappNumber: "",
-    publishedUrl: "",
-    allowDineInOrders: true,
-    allowTakeawayOrders: true,
-    takeawayPackageActive: true,
-    planType: "basic",
-    whatsappDirectOrderEnabled: false,
-    autoPrintKitchenTicket: true,
-    printerPaperSize: "80mm",
-    adminPin: "",
-    wifiName: "",
-    wifiPass: "",
-    address: "",
-    workingHours: "10:00 صباحاً - 11:00 مساءً",
-    holidays: "مفتوح طوال أيام الأسبوع",
-    tablesCount: 20,
-    taxRate: 0,
-    serviceCharge: 0,
-    theme: "luxury",
-    lang: "ar",
-    logo: "logo.svg"
+    logo: "logo.svg",
+    planType: "basic"
   };
 }
 
@@ -561,9 +594,7 @@ function getStoredData(key, fallback) {
           try { localStorage.setItem(scopedKey, JSON.stringify(merged)); } catch(e){}
           return merged;
         }
-        if (key === 'dishes' && Array.isArray(parsed) && parsed.length === 0) {
-          return (fallback && fallback.length > 0) ? fallback : DEFAULT_DISHES;
-        }
+        if (key === 'dishes' && Array.isArray(parsed) && parsed.length === 0) { return (fallback && fallback.length > 0) ? fallback : DEFAULT_DISHES; }
         return parsed;
       }
     }
@@ -623,7 +654,7 @@ function migrateFishDishesToWeighted() {
     });
     if (changed) {
       setStoredData('dishes', dishes);
-      console.log("✅ Main: All fish dishes migrated to weighted (per_kg) successfully.");
+      console.log("✅ Captain: All fish dishes migrated to weighted (per_kg) successfully.");
     }
   } catch (e) {
     console.warn("Fish migration notice:", e);
@@ -632,6 +663,7 @@ function migrateFishDishesToWeighted() {
 window.migrateFishDishesToWeighted = migrateFishDishesToWeighted;
 try { migrateFishDishesToWeighted(); } catch(e) {}
 
+/* === auth.js === */
 /**
  * Smart E-Menu - Supabase Cloud Authentication & User Management
  * إدارة تسجيل الدخول والمستخدمين السحابية عبر Supabase مع دعم تعدد المطاعم
@@ -1038,6 +1070,7 @@ async function loginCaptainByIdAsync(captainId, pin, rememberMe = true) {
   if (lockout.locked) return { success: false, message: lockout.message };
 
   const client = typeof getSupabase === 'function' ? getSupabase() : null;
+  const restId = typeof getActiveRestaurantId === 'function' ? getActiveRestaurantId() : DEFAULT_RESTAURANT_ID;
 
   if (client) {
     try {
@@ -1353,7 +1386,7 @@ function getCurrentSession() {
   }
 }
 
-function logoutSession(redirectUrl = 'index.html') {
+function logoutSession(redirectUrl = 'login.html?role=captain') {
   if (window.AuthCore && typeof window.AuthCore.logoutSession === 'function') {
     return window.AuthCore.logoutSession(redirectUrl);
   }
@@ -1506,7 +1539,6 @@ function importDatabaseBackup(file, callback) {
       }
 
       window.dispatchEvent(new Event('storage'));
-      if (typeof renderAdminDishesTable === 'function') renderAdminDishesTable();
 
       if (callback) callback({ 
         success: true, 
@@ -1620,7 +1652,6 @@ function importMenuDishesBackup(file, callback) {
       }
 
       window.dispatchEvent(new Event('storage'));
-      if (typeof renderAdminDishesTable === 'function') renderAdminDishesTable();
 
       if (callback) callback({
         success: true,
@@ -1789,7 +1820,7 @@ function initDatabase() {
 // =============================================================
 const DEFAULT_PRINT_SETTINGS = {
   paperSize: '80mm',      // '80mm' | '58mm'
-  ticketType: 'customer', // 'kitchen' (طابعة 101) | 'customer' (طابعة 100) - منع الطباعة المزدوجة
+  ticketType: 'kitchen',  // 'kitchen' (طابعة 101) | 'customer' (طابعة 100) - منع الطباعة المزدوجة
   autoDirectPrint: true,
   silentPrint: true,      // طباعة صامتة فورية
   bridgeUrl: 'http://127.0.0.1:8080',
@@ -1837,27 +1868,33 @@ function getKitchenTicketHtml(order, config, timeStr, dateStr, typeBadge, isSmal
   });
 
   return `
-    <div class="thermal-receipt kitchen-ticket" style="width: ${isSmallPaper ? '48mm' : '72mm'}; margin: 0 auto;">
-      <div class="ticket-header">
-        <h2 style="font-size: ${isSmallPaper ? '14px' : '17px'}; font-weight: 900;">${config.name}</h2>
-        <div class="ticket-subtitle">👨‍🍳 بون تحضير المطبخ / KITCHEN</div>
-        <div class="ticket-badge-box">
+    <div class="thermal-receipt kitchen-ticket" style="width: ${isSmallPaper ? '48mm' : '72mm'}; margin: 0 auto; color: #000; font-family: 'Cairo', monospace, sans-serif; line-height: 1.35;">
+      <div class="ticket-header" style="text-align: center; padding-bottom: 6px; border-bottom: 2px solid #000;">
+        <h2 style="font-size: ${isSmallPaper ? '18px' : '23px'}; font-weight: 900; margin: 0 0 2px 0;">${config.name}</h2>
+        <div class="ticket-subtitle" style="font-size: ${isSmallPaper ? '13px' : '16px'}; font-weight: 900; margin-top: 2px;">👨‍🍳 بون تحضير المطبخ / KITCHEN</div>
+        <div class="ticket-badge-box" style="margin-top: 4px; font-size: ${isSmallPaper ? '14px' : '17px'}; font-weight: 900; padding: 4px 6px; background: #000; color: #fff !important; border-radius: 5px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
           ${typeBadge}
         </div>
+        ${(order.isPreorder || (order.notes && order.notes.includes('حجز مسبق لليوم التالي'))) ? `
+          <div style="margin-top: 6px; padding: 6px; background: #000; color: #fff !important; font-weight: 900; font-size: ${isSmallPaper ? '12px' : '14px'}; border-radius: 6px; text-align: center; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+            📅 *** حجز مسبق لليوم التالي *** 📅<br>
+            <span style="font-size: ${isSmallPaper ? '10px' : '12px'}; font-weight: bold;">موعد التجهيز: غداً (${order.preorderPreferredTime || 'مع بداية الافتتاح'})</span>
+          </div>
+        ` : ''}
       </div>
 
-      <div class="ticket-info" style="font-size: ${isSmallPaper ? '10px' : '11px'};">
-        <div class="info-row">
-          <span>رقم البون: <b>#${order.id}</b></span>
-          <span>الوقت: <b>${timeStr}</b></span>
+      <div class="ticket-info" style="font-size: ${isSmallPaper ? '11px' : '13px'}; padding: 6px 0; border-bottom: 2px solid #000;">
+        <div class="info-row" style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+          <span>رقم البون: <b style="font-size: ${isSmallPaper ? '14px' : '17px'}; font-family: monospace;">#${order.id}</b></span>
+          <span>الوقت: <b style="font-size: ${isSmallPaper ? '12px' : '14px'};">${timeStr}</b></span>
         </div>
-        <div class="info-row">
-          <span>التاريخ: ${dateStr}</span>
+        <div class="info-row" style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+          <span>التاريخ: <b>${dateStr}</b></span>
           <span>المرسل: <b>${order.captainName || 'كاشير المطعم'}</b></span>
         </div>
         ${order.customerInfo || order.customerName ? `
-          <div class="customer-highlight" style="margin-top: 2px;">
-            الزبون: <b>${order.customerInfo || order.customerName}</b>
+          <div class="customer-highlight" style="margin-top: 4px; font-size: ${isSmallPaper ? '13px' : '16px'}; font-weight: 900; border-top: 1px dashed #aaa; padding-top: 3px;">
+            👤 الزبون: <b>${order.customerInfo || order.customerName}</b>
           </div>
         ` : ''}
         ${order.customerPhone ? `
@@ -1869,12 +1906,12 @@ function getKitchenTicketHtml(order, config, timeStr, dateStr, typeBadge, isSmal
         ` : ''}
       </div>
 
-      <div class="ticket-items">
-        <table>
+      <div class="ticket-items" style="margin-top: 6px;">
+        <table style="width: 100%; border-collapse: collapse;">
           <thead>
-            <tr>
-              <th style="width: 25%; text-align: center;">العدد</th>
-              <th style="width: 75%;">الصنف والوجبة المطلوبة</th>
+            <tr style="border-bottom: 2px solid #000;">
+              <th style="width: 25%; text-align: center; font-size: ${isSmallPaper ? '12px' : '14px'}; font-weight: 900; padding: 4px 0;">العدد</th>
+              <th style="width: 75%; text-align: right; font-size: ${isSmallPaper ? '12px' : '14px'}; font-weight: 900; padding: 4px;">الصنف والوجبة المطلوبة</th>
             </tr>
           </thead>
           <tbody>
@@ -1884,18 +1921,18 @@ function getKitchenTicketHtml(order, config, timeStr, dateStr, typeBadge, isSmal
       </div>
 
       ${order.notes ? `
-        <div class="ticket-kitchen-notes" style="font-size: ${isSmallPaper ? '10px' : '12px'}; border: 1px solid #000; padding: 4px; margin-top: 5px; font-weight: bold;">
+        <div class="ticket-kitchen-notes" style="font-size: ${isSmallPaper ? '12px' : '15px'}; border: 2px solid #000; padding: 6px; margin-top: 8px; font-weight: 900; background: #f9f9f9; border-radius: 5px;">
           ⚠️ ملاحظات وإضافات للطلب: ${order.notes}
         </div>
       ` : ''}
 
       <!-- المجموع الكلي البارز في بون المطبخ -->
-      <div style="margin-top: 8px; border: 2px solid #000; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: ${isSmallPaper ? '13px' : '15px'}; background: #f0f0f0; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+      <div style="margin-top: 8px; border: 2.5px solid #000; padding: 6px 8px; display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: ${isSmallPaper ? '14px' : '17px'}; background: #f0f0f0; -webkit-print-color-adjust: exact; print-color-adjust: exact; border-radius: 6px;">
         <span>المجموع الكلي:</span>
-        <span style="font-family: monospace; font-size: ${isSmallPaper ? '14px' : '17px'};">${(order.total || 0).toLocaleString()} ${config.currency || 'د.ع'}</span>
+        <span style="font-family: monospace; font-size: ${isSmallPaper ? '16px' : '20px'}; font-weight: 900;">${(order.total || 0).toLocaleString()} ${config.currency || 'د.ع'}</span>
       </div>
 
-      <div class="ticket-footer">
+      <div class="ticket-footer" style="margin-top: 8px; border-top: 1.5px dashed #000; padding-top: 5px; text-align: center; font-weight: 900; font-size: ${isSmallPaper ? '11px' : '13px'};">
         <div>--- نهاية بون تحضير المطبخ ---</div>
       </div>
     </div>
@@ -1914,17 +1951,17 @@ function getCustomerTicketHtml(order, config, timeStr, dateStr, typeBadge, curre
     subtotal += itemTotal;
 
     customerItemsHtml += `
-      <tr style="border-bottom: 1px dashed #ddd;">
-        <td class="ticket-item-qty" style="font-size: ${isSmallPaper ? '11px' : '13px'}; font-weight: 900; text-align: center; vertical-align: top; padding: 4px 2px;">
-          ${item.quantity}
+      <tr style="border-bottom: 1.5px dashed #888;">
+        <td class="ticket-item-qty" style="font-size: ${isSmallPaper ? '14px' : '17px'}; font-weight: 900; text-align: center; vertical-align: middle; padding: 6px 2px;">
+          <span style="display: inline-block; border: 2px solid #000; border-radius: 6px; padding: 2px 6px; min-width: 28px; background: #fff;">${item.quantity}</span>
         </td>
-        <td style="vertical-align: top; padding: 4px 2px;">
-          <div style="font-weight: 800; font-size: ${isSmallPaper ? '11px' : '12px'};">${item.name}</div>
-          <div style="font-size: ${isSmallPaper ? '8px' : '9px'}; color: #555;">
+        <td style="vertical-align: middle; padding: 6px 4px;">
+          <div style="font-weight: 900; font-size: ${isSmallPaper ? '13px' : '16px'}; color: #000;">${item.name}</div>
+          <div style="font-size: ${isSmallPaper ? '10px' : '12px'}; color: #333; font-weight: bold; margin-top: 1px;">
             سعر المفرد: ${item.price.toLocaleString()} ${currency}
           </div>
         </td>
-        <td style="text-align: left; font-weight: 900; font-size: ${isSmallPaper ? '10px' : '11px'}; vertical-align: top; padding: 4px 2px; white-space: nowrap;">
+        <td style="text-align: left; font-weight: 900; font-size: ${isSmallPaper ? '13px' : '16px'}; vertical-align: middle; padding: 6px 2px; white-space: nowrap; font-family: monospace;">
           ${itemTotal.toLocaleString()} ${currency}
         </td>
       </tr>
@@ -1935,28 +1972,41 @@ function getCustomerTicketHtml(order, config, timeStr, dateStr, typeBadge, curre
   const deliveryFee = order.deliveryFee !== undefined ? order.deliveryFee : (isTakeawayOrDelivery ? 0 : null);
 
   return `
-    <div class="thermal-receipt customer-invoice" style="width: ${isSmallPaper ? '48mm' : '72mm'}; margin: 0 auto; color: #000; font-family: 'Cairo', monospace, sans-serif;">
-      <div class="ticket-header">
-        <h2 style="font-size: ${isSmallPaper ? '14px' : '17px'}; font-weight: 900;">${config.name}</h2>
-        ${config.tagline ? `<div class="tagline-print" style="font-size: 8px; color: #333;">${config.tagline}</div>` : ''}
-        <div class="ticket-subtitle">🧾 فاتورة وحساب الزبون / INVOICE</div>
-        <div class="ticket-badge-box">
+    <div class="thermal-receipt customer-invoice" style="width: ${isSmallPaper ? '48mm' : '72mm'}; margin: 0 auto; color: #000; font-family: 'Cairo', monospace, sans-serif; line-height: 1.35;">
+      <div class="ticket-header" style="text-align: center; padding-bottom: 6px; border-bottom: 2px solid #000;">
+        <h2 style="font-size: ${isSmallPaper ? '18px' : '23px'}; font-weight: 900; margin: 0 0 2px 0;">${config.name}</h2>
+        ${config.tagline ? `<div class="tagline-print" style="font-size: ${isSmallPaper ? '9px' : '11px'}; color: #222; font-weight: bold;">${config.tagline}</div>` : ''}
+        
+        ${config.phone ? `
+          <div style="margin: 4px 0; font-size: ${isSmallPaper ? '13px' : '16px'}; font-weight: 900; border: 1.5px solid #000; border-radius: 6px; padding: 3px 6px; display: inline-block;">
+            <span>📞 هاتف المطعم:</span> <b style="font-family: monospace; letter-spacing: 1px; direction: ltr;">${config.phone}</b>
+          </div>
+        ` : ''}
+
+        <div class="ticket-subtitle" style="font-size: ${isSmallPaper ? '12px' : '14px'}; font-weight: 900; margin-top: 4px; letter-spacing: 0.5px;">🧾 فاتورة حساب الزبون / INVOICE</div>
+        <div class="ticket-badge-box" style="margin-top: 4px; font-size: ${isSmallPaper ? '13px' : '16px'}; font-weight: 900; padding: 3px 6px; background: #000; color: #fff !important; border-radius: 5px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
           ${typeBadge}
         </div>
+        ${(order.isPreorder || (order.notes && order.notes.includes('حجز مسبق لليوم التالي'))) ? `
+          <div style="margin-top: 6px; padding: 6px; background: #000; color: #fff !important; font-weight: 900; font-size: ${isSmallPaper ? '12px' : '14px'}; border-radius: 6px; text-align: center; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+            📅 *** حجز مسبق لليوم التالي *** 📅<br>
+            <span style="font-size: ${isSmallPaper ? '10px' : '12px'}; font-weight: bold;">موعد التجهيز: غداً (${order.preorderPreferredTime || 'مع بداية الافتتاح'})</span>
+          </div>
+        ` : ''}
       </div>
 
-      <div class="ticket-info" style="font-size: ${isSmallPaper ? '9px' : '11px'};">
-        <div class="info-row">
-          <span>رقم الفاتورة: <b>#${order.id}</b></span>
-          <span>الوقت: <b>${timeStr}</b></span>
+      <div class="ticket-info" style="font-size: ${isSmallPaper ? '11px' : '13px'}; padding: 6px 0; border-bottom: 2px solid #000;">
+        <div class="info-row" style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+          <span>رقم الفاتورة: <b style="font-size: ${isSmallPaper ? '13px' : '16px'}; font-family: monospace;">#${order.id}</b></span>
+          <span>الوقت: <b style="font-size: ${isSmallPaper ? '12px' : '14px'};">${timeStr}</b></span>
         </div>
-        <div class="info-row">
-          <span>التاريخ: ${dateStr}</span>
-          <span>الكاشير / الخدمة: <b>${order.captainName || 'كاشير المطعم'}</b></span>
+        <div class="info-row" style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+          <span>التاريخ: <b>${dateStr}</b></span>
+          <span>الخدمة: <b>${order.captainName || 'كاشير المطعم'}</b></span>
         </div>
 
         ${(order.customerInfo || order.customerName) ? `
-          <div class="customer-highlight" style="margin-top: 3px; font-size: ${isSmallPaper ? '10px' : '12px'};">
+          <div class="customer-highlight" style="margin-top: 4px; font-size: ${isSmallPaper ? '13px' : '16px'}; font-weight: 900; border-top: 1px dashed #aaa; padding-top: 3px;">
             👤 اسم الزبون: <b>${order.customerInfo || order.customerName}</b>
           </div>
         ` : ''}
@@ -1970,25 +2020,19 @@ function getCustomerTicketHtml(order, config, timeStr, dateStr, typeBadge, curre
         ` : ''}
 
         ${order.customerAddress ? `
-          <div class="info-row" style="margin-top: 3px; font-size: ${isSmallPaper ? '9px' : '11px'};">
-            <span>📍 عنوان التوصيل:</span> <b>${order.customerAddress}</b>
-          </div>
-        ` : ''}
-
-        ${config.phone ? `
-          <div class="info-row" style="margin-top: 2px; font-size: ${isSmallPaper ? '8px' : '10px'}; color: #444;">
-            <span>هاتف المطعم:</span> <b>${config.phone}</b>
+          <div class="info-row" style="margin-top: 4px; font-size: ${isSmallPaper ? '12px' : '14px'}; font-weight: bold; background: #f0f0f0; padding: 4px 6px; border-radius: 5px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+            <span>📍 عنوان التوصيل:</span> <b style="display: block; margin-top: 1px;">${order.customerAddress}</b>
           </div>
         ` : ''}
       </div>
 
-      <div class="ticket-items">
+      <div class="ticket-items" style="margin-top: 4px;">
         <table style="width: 100%; border-collapse: collapse;">
           <thead>
             <tr style="border-bottom: 2px solid #000;">
-              <th style="width: 15%; text-align: center; font-size: ${isSmallPaper ? '9px' : '11px'};">العدد</th>
-              <th style="width: 55%; text-align: right; font-size: ${isSmallPaper ? '9px' : '11px'};">الصنف وسعر الوجبة</th>
-              <th style="width: 30%; text-align: left; font-size: ${isSmallPaper ? '9px' : '11px'};">المجموع</th>
+              <th style="width: 20%; text-align: center; font-size: ${isSmallPaper ? '12px' : '14px'}; font-weight: 900; padding: 4px 0;">العدد</th>
+              <th style="width: 50%; text-align: right; font-size: ${isSmallPaper ? '12px' : '14px'}; font-weight: 900; padding: 4px;">الصنف والوجبة</th>
+              <th style="width: 30%; text-align: left; font-size: ${isSmallPaper ? '12px' : '14px'}; font-weight: 900; padding: 4px 0;">المجموع</th>
             </tr>
           </thead>
           <tbody>
@@ -1998,50 +2042,55 @@ function getCustomerTicketHtml(order, config, timeStr, dateStr, typeBadge, curre
       </div>
 
       <!-- تفصيل الحساب والمجاميع وأجور التوصيل -->
-      <div class="ticket-summary" style="margin-top: 6px; border-top: 1px solid #000; padding-top: 4px; font-size: ${isSmallPaper ? '9px' : '11px'};">
-        <div class="info-row" style="margin-bottom: 2px;">
-          <span>المجموع الفرعي للوجبات:</span>
-          <b>${subtotal.toLocaleString()} ${currency}</b>
+      <div class="ticket-summary" style="margin-top: 8px; border-top: 2px solid #000; padding-top: 6px; font-size: ${isSmallPaper ? '12px' : '14px'};">
+        <div class="info-row" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+          <span style="font-weight: bold;">المجموع الفرعي:</span>
+          <b style="font-family: monospace; font-size: ${isSmallPaper ? '13px' : '15px'};">${subtotal.toLocaleString()} ${currency}</b>
         </div>
 
         ${isTakeawayOrDelivery ? `
-          <div class="info-row" style="margin-bottom: 2px;">
-            <span>أجور التوصيل:</span>
-            <b>${deliveryFee && deliveryFee > 0 ? `${deliveryFee.toLocaleString()} ${currency}` : '0 ' + currency + ' (توصيل مجاني 🛵)'}</b>
+          <div class="info-row" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="font-weight: bold;">أجور التوصيل:</span>
+            <b style="font-family: monospace; font-size: ${isSmallPaper ? '13px' : '15px'};">${deliveryFee && deliveryFee > 0 ? `${deliveryFee.toLocaleString()} ${currency}` : '0 ' + currency + ' (مجاني 🛵)'}</b>
           </div>
         ` : ''}
 
         ${order.discount && order.discount > 0 ? `
-          <div class="info-row" style="margin-bottom: 2px; color: #c00;">
-            <span>الخصم / التخفيض:</span>
-            <b>-${order.discount.toLocaleString()} ${currency}</b>
+          <div class="info-row" style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #c00;">
+            <span style="font-weight: bold;">الخصم الممنوح:</span>
+            <b style="font-family: monospace; font-size: ${isSmallPaper ? '13px' : '15px'};">-${order.discount.toLocaleString()} ${currency}</b>
           </div>
         ` : ''}
 
-        <div class="summary-row total-row" style="font-size: ${isSmallPaper ? '13px' : '16px'}; font-weight: 900; border: 2px solid #000; margin-top: 6px; padding: 5px 8px; background: #f0f0f0; -webkit-print-color-adjust: exact; print-color-adjust: exact; display: flex; justify-content: space-between; align-items: center;">
-          <span>المجموع الكلي المطلوب:</span>
-          <span style="font-family: monospace; font-size: ${isSmallPaper ? '14px' : '18px'}; font-weight: 900;">${order.total.toLocaleString()} ${currency}</span>
+        <div class="summary-row total-row" style="font-size: ${isSmallPaper ? '15px' : '18px'}; font-weight: 900; border: 2.5px solid #000; margin-top: 8px; padding: 6px 8px; background: #f0f0f0; -webkit-print-color-adjust: exact; print-color-adjust: exact; display: flex; justify-content: space-between; align-items: center; border-radius: 6px;">
+          <span>المجموع الكلي:</span>
+          <span style="font-family: monospace; font-size: ${isSmallPaper ? '19px' : '24px'}; font-weight: 900;">${order.total.toLocaleString()} ${currency}</span>
         </div>
       </div>
 
       ${order.notes ? `
-        <div style="margin-top: 4px; font-size: ${isSmallPaper ? '8px' : '10px'}; border: 1px dashed #666; padding: 3px;">
-          <b>ملاحظات الزبون:</b> ${order.notes}
+        <div style="margin-top: 6px; font-size: ${isSmallPaper ? '11px' : '13px'}; border: 1.5px dashed #000; padding: 5px; border-radius: 5px; font-weight: bold;">
+          <b>📝 ملاحظات الطلب:</b> ${order.notes}
         </div>
       ` : ''}
 
       ${order.mapUrl ? `
         <!-- قسم باركود الخريطة والملاحة لعامل التوصيل -->
-        <div style="text-align: center; margin-top: 6px; padding-top: 5px; border-top: 1px dashed #000;">
-          <div style="font-weight: 900; font-size: ${isSmallPaper ? '9px' : '11px'}; margin-bottom: 3px;">🗺️ باركود موقع الزبون على الخريطة GPS:</div>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(order.mapUrl)}" style="width: ${isSmallPaper ? '80px' : '100px'}; height: ${isSmallPaper ? '80px' : '100px'}; margin: 0 auto; display: block; border: 1px solid #000; padding: 2px;" alt="QR Map" />
-          <div style="font-size: 8px; font-weight: bold; margin-top: 2px;">امسح الباركود بكاميرا الهاتف للملاحة وتوجيه السائق</div>
+        <div style="text-align: center; margin-top: 8px; padding-top: 6px; border-top: 1.5px dashed #000;">
+          <div style="font-weight: 900; font-size: ${isSmallPaper ? '11px' : '13px'}; margin-bottom: 4px;">🗺️ موقع الزبون على الخريطة GPS:</div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(order.mapUrl)}" style="width: ${isSmallPaper ? '90px' : '110px'}; height: ${isSmallPaper ? '90px' : '110px'}; margin: 0 auto; display: block; border: 1.5px solid #000; padding: 2px;" alt="QR Map" />
+          <div style="font-size: ${isSmallPaper ? '9px' : '11px'}; font-weight: bold; margin-top: 3px;">امسح الكود بكاميرا الهاتف للملاحة المباشرة</div>
         </div>
       ` : ''}
 
-      <div class="ticket-footer" style="margin-top: 6px; border-top: 1px dashed #000; padding-top: 4px; text-align: center;">
-        <div class="thank-you-msg" style="font-weight: bold; font-size: ${isSmallPaper ? '9px' : '11px'};">❤️ نتشرف بزيارتكم وبالصحة والعافية! ❤️</div>
-        <div style="font-size: 8px; color: #444; margin-top: 2px;">نظام إدارة المطاعم الذكي - ${config.name}</div>
+      <div class="ticket-footer" style="margin-top: 8px; border-top: 2px dashed #000; padding-top: 6px; text-align: center;">
+        <div class="thank-you-msg" style="font-weight: 900; font-size: ${isSmallPaper ? '12px' : '14px'};">❤️ نتشرف بزيارتكم وبالصحة والعافية! ❤️</div>
+        ${config.phone ? `
+          <div style="font-size: ${isSmallPaper ? '11px' : '13px'}; font-weight: 800; margin-top: 3px;">
+            خدمة الزبائن والطلبات: <b style="font-family: monospace; direction: ltr;">${config.phone}</b>
+          </div>
+        ` : ''}
+        <div style="font-size: ${isSmallPaper ? '9px' : '10px'}; color: #333; margin-top: 3px; font-weight: bold;">نظام إدارة المطاعم الذكي - ${config.name}</div>
       </div>
     </div>
   `;
@@ -2049,6 +2098,8 @@ function getCustomerTicketHtml(order, config, timeStr, dateStr, typeBadge, curre
 
 // -------------------------------------------------------------
 // محرك الطباعة المباشر الذكي وفق إعدادات الكاشير / الكابتن
+// -------------------------------------------------------------
+// 賲丨乇賰 丕賱胤亘丕毓丞 丕賱賲亘丕卮乇 丕賱匕賰賷 賵賮賯 廿毓丿丕丿丕鬲 丕賱賰丕卮賷乇 / 丕賱賰丕亘鬲賳
 // -------------------------------------------------------------
 function centerTicketText(text, width = 42) {
   text = String(text || '');
@@ -2066,29 +2117,47 @@ function formatKitchenTextTicket(order, config, isSmallPaper = false) {
   const timeStr = dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
   const dateStr = dateObj.toLocaleDateString('ar-EG');
   
-  let typeText = "سفري / خارجي";
+  // ✅ نوع الطلب واضح
+  let typeText = "سفري (استلام شخصي)";
   if (order.type === 'dine-in') {
     typeText = `صالة - طاولة [ ${order.tableNumber || 1} ]`;
   } else if (order.type === 'delivery') {
-    typeText = "طلب توصيل دليفري";
+    typeText = "دليفري (توصيل خارجي)";
   }
 
   let lines = [
     div,
     centerTicketText(config.name || "مطعم فحمة ودخان", width),
-    centerTicketText("بون تحضير المطبخ / KITCHEN", width),
+    centerTicketText("👨‍🍳 بون تحضير المطبخ / KITCHEN", width),
     div,
     `رقم البون: #${order.id}   الوقت: ${timeStr}`,
     `التاريخ: ${dateStr}`,
     `نوع الطلب: ${typeText}`,
-    `المرسل: ${order.captainName || 'كاشير المطعم'}`,
-    subDiv,
-    "العدد | الصنف المطلوب",
-    subDiv
+    `المرسل: ${order.captainName || 'كابتن الصالة'}`
   ];
 
+  // ✅ اسم الزبون وهاتفه في بون المطبخ
+  const custName = order.customerInfo || order.customerName || '';
+  const custPhone = order.customerPhone || '';
+  if (custName) {
+    lines.push(`الزبون: ${custName}`);
+  }
+  if (custPhone) {
+    lines.push(div);
+    lines.push(centerTicketText(`📞 هاتف الزبون: ${custPhone}`, width));
+    lines.push(div);
+  }
+
+  lines.push(subDiv);
+  lines.push("العدد | الصنف المطلوب");
+  lines.push(subDiv);
+
   (order.items || []).forEach(item => {
-    lines.push(` [${item.quantity}]  ${item.name}`);
+    if (item.isWeighted || item.weight) {
+      lines.push(` [1]  ${item.baseName || item.name} [وزن: ${item.weight} كغم]`);
+    } else {
+      lines.push(` [${item.quantity}]  ${item.name}`);
+    }
   });
 
   if (order.notes) {
@@ -2112,60 +2181,85 @@ function formatCashierTextTicket(order, config, isSmallPaper = false) {
   const dateStr = dateObj.toLocaleDateString('ar-EG');
   const currency = order.currency || config.currency || 'د.ع';
 
-  let typeText = "سفري / خارجي";
+  // ✅ نوع الطلب بالعربي الواضح
+  let typeText = "سفري (استلام شخصي)";
   if (order.type === 'dine-in') {
     typeText = `صالة - طاولة [ ${order.tableNumber || 1} ]`;
   } else if (order.type === 'delivery') {
-    typeText = "طلب توصيل دليفري";
+    typeText = "دليفري (توصيل خارجي)";
   }
 
   let lines = [
     div,
-    centerTicketText(config.name || "مطعم فحمة ودخان", width),
-    centerTicketText("فاتورة حساب وبون محاسبة", width),
-    div,
-    `رقم الفاتورة: #${order.id}   الوقت: ${timeStr}`,
-    `التاريخ: ${dateStr}`,
-    `نوع الطلب: ${typeText}`,
-    `المحاسب: ${order.captainName || 'كاشير المطعم'}`
+    centerTicketText(config.name || "مطعم فحمة ودخان", width)
   ];
 
-  if (order.customerInfo || order.customerName) {
-    lines.push(`الزبون: ${order.customerInfo || order.customerName}`);
+  if (config.phone) {
+    lines.push(centerTicketText(`📞 هاتف المطعم: ${config.phone}`, width));
   }
-  if (order.customerPhone) {
-    lines.push(`هاتف الزبون: ${order.customerPhone}`);
+
+  lines.push(centerTicketText("فاتورة حساب وبون محاسبة", width));
+  lines.push(div);
+  lines.push(`رقم الفاتورة: #${order.id}   الوقت: ${timeStr}`);
+  lines.push(`التاريخ: ${dateStr}`);
+  lines.push(`نوع الطلب: ${typeText}`);
+  lines.push(`المحاسب: ${order.captainName || 'كابتن الصالة'}`);
+
+  // ✅ معلومات الزبون وهاتفه بشكل مكبر وبارز
+  const custName = order.customerInfo || order.customerName || '';
+  const custPhone = order.customerPhone || '';
+  const custAddr  = order.customerAddress || '';
+
+  if (custName) {
+    lines.push(subDiv);
+    lines.push(`الزبون: ${custName}`);
+  }
+  if (custPhone) {
+    lines.push(div);
+    lines.push(centerTicketText(`📞 هاتف الزبون: ${custPhone}`, width));
+    lines.push(div);
+  }
+  if (custAddr) {
+    lines.push(`عنوان التوصيل: ${custAddr}`);
   }
 
   lines.push(subDiv);
-  lines.push("العدد | الصنف                      | الإجمالي");
+  lines.push("العدد | الصنف                      | الاجمالي");
   lines.push(subDiv);
 
   let subtotal = 0;
   (order.items || []).forEach(item => {
     const itemTotal = item.price * item.quantity;
     subtotal += itemTotal;
-    lines.push(` [${item.quantity}]  ${item.name}`);
-    lines.push(`      ${item.price.toLocaleString()} x ${item.quantity} = ${itemTotal.toLocaleString()} ${currency}`);
+    if (item.isWeighted || item.weight) {
+      lines.push(` [1]  ${item.baseName || item.name}`);
+      lines.push(`      ${item.weight} كغم x ${(item.pricePerKg || item.price).toLocaleString()} = ${itemTotal.toLocaleString()} ${currency}`);
+    } else {
+      lines.push(` [${item.quantity}]  ${item.name}`);
+      lines.push(`      ${item.price.toLocaleString()} x ${item.quantity} = ${itemTotal.toLocaleString()} ${currency}`);
+    }
   });
 
   lines.push(subDiv);
   lines.push(`المجموع الفرعي: ${subtotal.toLocaleString()} ${currency}`);
 
   if (order.deliveryFee && order.deliveryFee > 0) {
-    lines.push(`أجور التوصيل: ${order.deliveryFee.toLocaleString()} ${currency}`);
+    lines.push(`اجور التوصيل: +${order.deliveryFee.toLocaleString()} ${currency}`);
   }
   if (order.discount && order.discount > 0) {
-    lines.push(`الخصم والتخفيض: -${order.discount.toLocaleString()} ${currency}`);
+    lines.push(`الخصم: -${order.discount.toLocaleString()} ${currency}`);
   }
 
   lines.push(div);
-  lines.push(`المجموع النهائي المطلوب: ${(order.total || 0).toLocaleString()} ${currency}`);
+  lines.push(`المجموع النهائي: ${(order.total || 0).toLocaleString()} ${currency}`);
   lines.push(div);
   if (order.notes) {
     lines.push(`ملاحظات: ${order.notes}`);
   }
   lines.push(centerTicketText("شكراً لزيارتكم وبالصحة والعافية", width));
+  if (config.phone) {
+    lines.push(centerTicketText(`خدمة الزبائن: ${config.phone}`, width));
+  }
   lines.push(div);
   return lines.join("\r\n");
 }
@@ -2185,20 +2279,347 @@ function showSilentPrintToast(msg) {
   }, 3500);
 }
 
+function showCaptainToast(msg, icon = '✅') {
+  let toast = document.getElementById('captain-action-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'captain-action-toast';
+    toast.className = 'fixed top-5 left-1/2 -translate-x-1/2 z-[99999] bg-slate-900 border border-emerald-500/80 text-white font-black text-sm px-6 py-3.5 rounded-2xl shadow-2xl flex items-center gap-2.5 transition-all duration-300 transform -translate-y-12 opacity-0 pointer-events-none ring-4 ring-emerald-500/20';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = `<span class="text-lg">${icon}</span><span class="text-emerald-300">${msg}</span>`;
+  toast.classList.remove('-translate-y-12', 'opacity-0');
+  setTimeout(() => {
+    toast.classList.add('-translate-y-12', 'opacity-0');
+  }, 2500);
+}
+window.showCaptainToast = showCaptainToast;
 
+// -------------------------------------------------------------
+// توليد بون ورقي كصورة نقطية Raster ESC/POS خالية 100% من الرموز الصينية
+// -------------------------------------------------------------
+function renderTicketToEscPosRaster(order, ticketType = 'kitchen', isSmallPaper = false) {
+  if (!order) return null;
+  try {
+    const width = isSmallPaper ? 384 : 576;
+    const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
+    const currency = order.currency || config.currency || 'د.ع';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    const ctx = canvas.getContext('2d');
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    let estHeight = 480 + (items.length * 90);
+    if (order.notes) estHeight += 90;
+    if (order.customerInfo || order.customerPhone || order.customerAddress) estHeight += 180;
+    if (config.phone) estHeight += 60;
+    canvas.height = estHeight;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, width, canvas.height);
+
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'center';
+
+    let y = 38;
+
+    // 1. اسم المطعم بخط كبير
+    ctx.font = 'bold 30px "Cairo", "Tahoma", "Arial", sans-serif';
+    ctx.fillText(config.name || 'مطعم فحمة ودخان', width / 2, y);
+    y += 34;
+
+    // هاتف المطعم بالترويسة
+    if (config.phone) {
+      ctx.font = 'bold 18px "Cairo", "Tahoma", monospace, sans-serif';
+      ctx.fillText(`📞 هاتف المطعم: ${config.phone}`, width / 2, y);
+      y += 28;
+    }
+
+    // 2. عنوان البون
+    ctx.font = 'bold 22px "Cairo", "Tahoma", "Arial", sans-serif';
+    if (ticketType === 'kitchen') {
+      ctx.fillRect(20, y - 24, width - 40, 38);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText('👨‍🍳 بون تحضير المطبخ 👨‍🍳', width / 2, y + 4);
+      ctx.fillStyle = '#000000';
+      y += 40;
+    } else {
+      ctx.fillText('🧾 فاتورة الحساب والدفع 🧾', width / 2, y);
+      y += 32;
+    }
+
+    // خط فاصل
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(15, y);
+    ctx.lineTo(width - 15, y);
+    ctx.stroke();
+    y += 28;
+
+    // 3. تفاصيل الطلب
+    ctx.font = 'bold 20px "Cairo", "Tahoma", "Arial", sans-serif';
+    ctx.textAlign = 'right';
+
+    let typeText = "🛵 طلب سفري / خارجي";
+    if (order.type === 'dine-in') {
+      typeText = `🍽️ صالة داخلية - طاولة [ ${order.tableNumber || 1} ]`;
+    } else if (order.type === 'delivery') {
+      typeText = `🛵 طلب توصيل دليفري`;
+    }
+
+    ctx.fillText(typeText, width - 20, y);
+    const dateObj = new Date(order.timestamp || Date.now());
+    const timeStr = dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = dateObj.toLocaleDateString('ar-EG');
+    ctx.textAlign = 'left';
+    ctx.fillText(`${dateStr} ${timeStr}`, 20, y);
+    y += 28;
+
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 17px "Cairo", "Tahoma", monospace, sans-serif';
+    ctx.fillText(`رقم الطلب: #${order.id || '--'}`, width - 20, y);
+    if (order.captainName) {
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 16px "Cairo", "Tahoma", sans-serif';
+      ctx.fillText(`الموظف: ${order.captainName}`, 20, y);
+    }
+    y += 26;
+
+    // اسم الزبون
+    const custName = order.customerInfo || order.customerName || '';
+    const custPhone = order.customerPhone || '';
+    const custAddr = order.customerAddress || '';
+
+    if (custName) {
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 19px "Cairo", "Tahoma", sans-serif';
+      ctx.fillText(`👤 الزبون: ${custName}`, width - 20, y);
+      y += 26;
+    }
+
+    // هاتف الزبون مكبر ومؤطر بشكل بارز جداً
+    if (custPhone) {
+      ctx.fillRect(15, y, width - 30, 72);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 15px "Cairo", "Tahoma", sans-serif';
+      ctx.fillText('📞 هاتف الزبون والتوصيل:', width / 2, y + 20);
+      ctx.font = 'bold 32px monospace, "Cairo", sans-serif';
+      ctx.fillText(custPhone, width / 2, y + 55);
+      ctx.fillStyle = '#000000';
+      y += 84;
+    }
+
+    if (custAddr) {
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 17px "Cairo", "Tahoma", sans-serif';
+      ctx.fillText(`📍 عنوان التوصيل: ${custAddr}`, width - 20, y);
+      y += 26;
+    }
+
+    // خط فاصل
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(15, y);
+    ctx.lineTo(width - 15, y);
+    ctx.stroke();
+    y += 26;
+
+    // 4. رأس جدول الأصناف
+    ctx.font = 'bold 18px "Cairo", "Tahoma", "Arial", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('الصنف / الوجبة', width - 20, y);
+    if (ticketType === 'customer') {
+      ctx.textAlign = 'center';
+      ctx.fillText('الكمية', width / 2, y);
+      ctx.textAlign = 'left';
+      ctx.fillText('السعر', 20, y);
+    } else {
+      ctx.textAlign = 'left';
+      ctx.fillText('الكمية', 20, y);
+    }
+    y += 14;
+
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(15, y);
+    ctx.lineTo(width - 15, y);
+    ctx.stroke();
+    y += 28;
+
+    // 5. الأصناف بخطوط كبيرة وواضحة
+    items.forEach(item => {
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 20px "Cairo", "Tahoma", "Arial", sans-serif';
+
+      const isW = (typeof isDishWeighted === 'function') ? isDishWeighted(item) : false;
+      const itemName = item.baseName || item.name || '';
+      const weightVal = item.weight || (item.name && item.name.match(/\(([\d\.]+)\s*كغم\)/)?.[1]);
+
+      ctx.fillText(itemName, width - 20, y);
+
+      if (ticketType === 'customer') {
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 18px monospace, "Cairo", sans-serif';
+        if (isW && weightVal) {
+          ctx.fillText(`${weightVal} كغم`, width / 2, y);
+        } else {
+          ctx.fillText(`× ${item.quantity || 1}`, width / 2, y);
+        }
+
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 19px monospace, "Cairo", sans-serif';
+        const itemTot = Number(item.price) || 0;
+        ctx.fillText(`${itemTot.toLocaleString()} ${currency}`, 20, y);
+      } else {
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 22px monospace, "Cairo", sans-serif';
+        if (isW && weightVal) {
+          ctx.fillText(`⚖️ ${weightVal} كغم`, 20, y);
+        } else {
+          ctx.fillText(`[ × ${item.quantity || 1} ]`, 20, y);
+        }
+      }
+      y += 28;
+
+      if (item.notes) {
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 15px "Cairo", "Tahoma", sans-serif';
+        ctx.fillText(`   ↳ ملاحظة: ${item.notes}`, width - 30, y);
+        y += 24;
+      }
+    });
+
+    // 6. ملاحظات المطبخ
+    if (order.notes) {
+      y += 8;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(15, y);
+      ctx.lineTo(width - 15, y);
+      ctx.stroke();
+      y += 26;
+
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 17px "Cairo", "Tahoma", sans-serif';
+      ctx.fillText(`📝 ملاحظات: ${order.notes}`, width - 20, y);
+      y += 26;
+    }
+
+    // 7. قسم الحساب الكلي
+    if (ticketType !== 'kitchen') {
+      y += 8;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(15, y);
+      ctx.lineTo(width - 15, y);
+      ctx.stroke();
+      y += 28;
+
+      if (order.deliveryFee && Number(order.deliveryFee) > 0) {
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 17px "Cairo", "Tahoma", sans-serif';
+        ctx.fillText('أجور التوصيل:', width - 20, y);
+        ctx.textAlign = 'left';
+        ctx.fillText(`${Number(order.deliveryFee).toLocaleString()} ${currency}`, 20, y);
+        y += 26;
+      }
+
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 24px "Cairo", "Tahoma", sans-serif';
+      ctx.fillText('المجموع الإجمالي:', width - 20, y);
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 26px monospace, "Cairo", sans-serif';
+      const grandTot = Number(order.total) || 0;
+      ctx.fillText(`${grandTot.toLocaleString()} ${currency}`, 20, y);
+      y += 36;
+
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 16px "Cairo", "Tahoma", sans-serif';
+      ctx.fillText('شكراً لزيارتكم! نتشرف دائماً بخدمتكم 🌟', width / 2, y);
+      y += 26;
+
+      if (config.phone) {
+        ctx.font = 'bold 16px monospace, "Cairo", sans-serif';
+        ctx.fillText(`خدمة الزبائن والطلبات: ${config.phone}`, width / 2, y);
+        y += 26;
+      }
+    } else {
+      y += 15;
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 18px "Cairo", "Tahoma", sans-serif';
+      ctx.fillText('⚡ يرجى سرعة التحضير والجودة العالية ⚡', width / 2, y);
+      y += 26;
+    }
+
+    const finalHeight = y + 25;
+
+    const trimmed = document.createElement('canvas');
+    trimmed.width = width;
+    trimmed.height = finalHeight;
+    const tCtx = trimmed.getContext('2d');
+    tCtx.drawImage(canvas, 0, 0, width, finalHeight, 0, 0, width, finalHeight);
+
+    const imgData = tCtx.getImageData(0, 0, width, finalHeight).data;
+    const widthBytes = Math.ceil(width / 8);
+    const xL = widthBytes & 0xFF;
+    const xH = (widthBytes >> 8) & 0xFF;
+    const yL = finalHeight & 0xFF;
+    const yH = (finalHeight >> 8) & 0xFF;
+
+    const header = [0x1B, 0x40, 0x1C, 0x2E, 0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH];
+    const raster = [];
+
+    for (let row = 0; row < finalHeight; row++) {
+      for (let colByte = 0; colByte < widthBytes; colByte++) {
+        let b = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          const x = colByte * 8 + bit;
+          if (x < width) {
+            const idx = (row * width + x) * 4;
+            const a = imgData[idx + 3];
+            if (a > 120) {
+              const gray = 0.299 * imgData[idx] + 0.587 * imgData[idx + 1] + 0.114 * imgData[idx + 2];
+              if (gray < 160) {
+                b |= (1 << (7 - bit));
+              }
+            }
+          }
+        }
+        raster.push(b);
+      }
+    }
+
+    const footer = [0x0A, 0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x42, 0x00];
+    const fullBytes = new Uint8Array([...header, ...raster, ...footer]);
+
+    let binary = '';
+    const len = fullBytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(fullBytes[i]);
+    }
+    return window.btoa(binary);
+  } catch (err) {
+    console.warn("renderTicketToEscPosRaster error:", err);
+    return null;
+  }
+}
+window.renderTicketToEscPosRaster = renderTicketToEscPosRaster;
 
 // دالة الطباعة المباشرة الذكية للأوردر
 async function printOrderDirect(order, overrideTicketType = null) {
   if (!order) return;
 
   const ticketEl = document.getElementById('kitchen-print-ticket');
+  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
   const printSettings = getPrintSettings();
 
   const isSmallPaper = (printSettings.paperSize === '58mm');
-  // منع الطباعة المزدوجة نهائياً: إما مطبخ 101 أو حساب 100 فقط
+  // منع الطباعة المزدوجة نهائياً: إما مطبخ 101 أو حساب 100 فقط (افتراضي المطبخ للكابتن)
   let ticketType = overrideTicketType;
   if (!ticketType || ticketType === 'separate' || ticketType === 'both' || ticketType === 'combined') {
-    ticketType = (printSettings.ticketType === 'kitchen') ? 'kitchen' : 'customer';
+    ticketType = (printSettings.ticketType === 'customer') ? 'customer' : 'kitchen';
   }
 
   const dateObj = new Date(order.timestamp || Date.now());
@@ -2215,10 +2636,10 @@ async function printOrderDirect(order, overrideTicketType = null) {
 
   // تحديث محتوى عنصر الطباعة للمتصفح (فردي محدد فقط)
   if (ticketEl) {
-    if (ticketType === 'kitchen') {
-      ticketEl.innerHTML = `<div class="thermal-dual-container">${getKitchenTicketHtml(order, config, timeStr, dateStr, typeBadge, isSmallPaper)}</div>`;
-    } else {
+    if (ticketType === 'customer') {
       ticketEl.innerHTML = `<div class="thermal-dual-container">${getCustomerTicketHtml(order, config, timeStr, dateStr, typeBadge, currency, isSmallPaper)}</div>`;
+    } else {
+      ticketEl.innerHTML = `<div class="thermal-dual-container">${getKitchenTicketHtml(order, config, timeStr, dateStr, typeBadge, isSmallPaper)}</div>`;
     }
   }
 
@@ -2226,25 +2647,9 @@ async function printOrderDirect(order, overrideTicketType = null) {
   if (printSettings.silentPrint !== false) {
     const bridgeUrl = printSettings.bridgeUrl || 'http://127.0.0.1:8080';
     try {
-      if (ticketType === 'kitchen') {
-        // بون المطبخ فقط (101)
-        const kitchenText = formatKitchenTextTicket(order, config, isSmallPaper);
-        const res = await fetch(`${bridgeUrl}/print-kitchen`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode: 'ip',
-            ip: printSettings.kitchenIp || '192.168.1.101',
-            port: printSettings.kitchenPort || 9100,
-            text: kitchenText
-          })
-        }).catch(e => null);
-        if (res && res.ok) {
-          showSilentPrintToast("تم إرسال بون المطبخ فقط (101) 👨‍🍳✅");
-          return;
-        }
-      } else {
+      if (ticketType === 'customer') {
         // فاتورة الكاشير فقط (100)
+        const cashierRaster = renderTicketToEscPosRaster(order, 'customer', isSmallPaper);
         const cashierText = formatCashierTextTicket(order, config, isSmallPaper);
         const res = await fetch(`${bridgeUrl}/print-cashier`, {
           method: 'POST',
@@ -2254,11 +2659,31 @@ async function printOrderDirect(order, overrideTicketType = null) {
             ip: printSettings.cashierIp || '192.168.1.100',
             port: printSettings.cashierPort || 9100,
             printerName: printSettings.cashierPrinterName,
-            text: cashierText
+            text: cashierText,
+            rasterBase64: cashierRaster
           })
         }).catch(e => null);
         if (res && res.ok) {
           showSilentPrintToast("تم إرسال فاتورة الحساب فقط (100) 🧾✅");
+          return;
+        }
+      } else {
+        // بون المطبخ فقط (101)
+        const kitchenRaster = renderTicketToEscPosRaster(order, 'kitchen', isSmallPaper);
+        const kitchenText = formatKitchenTextTicket(order, config, isSmallPaper);
+        const res = await fetch(`${bridgeUrl}/print-kitchen`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'ip',
+            ip: printSettings.kitchenIp || '192.168.1.101',
+            port: printSettings.kitchenPort || 9100,
+            text: kitchenText,
+            rasterBase64: kitchenRaster
+          })
+        }).catch(e => null);
+        if (res && res.ok) {
+          showSilentPrintToast("تم إرسال بون المطبخ فقط (101) 👨‍🍳✅");
           return;
         }
       }
@@ -2272,8 +2697,8 @@ async function printOrderDirect(order, overrideTicketType = null) {
 }
 
 function printDualThermalReceipt(order) {
-  // منع الطباعة المزدوجة: توجيه تلقائي لفاتورة الحساب الفردية
-  printOrderDirect(order, 'customer');
+  // منع الطباعة المزدوجة: توجيه تلقائي للمطبخ للكابتن أو الحساب
+  printOrderDirect(order, 'kitchen');
 }
 
 function renderAndPrintKitchenTicket(order) {
@@ -2283,6 +2708,27 @@ function renderAndPrintKitchenTicket(order) {
 function renderAndPrintCashierTicket(order) {
   printOrderDirect(order, 'customer');
 }
+
+function printOrderDirectById(orderId, type = 'kitchen') {
+  const orders = getStoredData('orders', []);
+  const order = orders.find(o => String(o.id) === String(orderId));
+  if (order) {
+    printOrderDirect(order, type);
+  }
+}
+window.printOrderDirectById = printOrderDirectById;
+
+function printActiveTableKitchenTicket() {
+  if (!currentActiveTableOrder) return;
+  printOrderDirect(currentActiveTableOrder, 'kitchen');
+}
+window.printActiveTableKitchenTicket = printActiveTableKitchenTicket;
+
+function printActiveTableBill() {
+  if (!currentActiveTableOrder) return;
+  printOrderDirect(currentActiveTableOrder, 'customer');
+}
+window.printActiveTableBill = printActiveTableBill;
 
 // -------------------------------------------------------------
 // نافذة إعدادات الطابعات والطباعة الصامتة (100 كاشير + 101 مطبخ)
@@ -2650,7 +3096,7 @@ function savePrinterSettingsFromModal() {
   const settings = {
     ...current,
     paperSize: sizeChecked ? sizeChecked.value : '80mm',
-    ticketType: typeChecked ? typeChecked.value : 'customer',
+    ticketType: typeChecked ? typeChecked.value : 'kitchen',
     cashierMode: cashierPrinter ? 'windows' : 'ip',
     cashierIp: cashierIp,
     cashierPort: cashierPort,
@@ -2667,15 +3113,11 @@ function savePrinterSettingsFromModal() {
   alert(`✅ تم حفظ إعدادات الطابعات بنجاح!\n- طابعة 1 (الكاشير): ${cashierPrinter ? cashierPrinter : cashierIp}\n- طابعة 2 (المطبخ): ${kitchenIp}\n- نظام الطباعة الصامتة نشط.`);
 }
 
+
 // =============================================================
 
 function getAccountingReport(filterPreset = 'today', customDateStr = null) {
-  const activeOrders = getStoredData('orders', []);
-  const archivedOrders = getStoredData('accounting_archive', []);
-  const orderMap = new Map();
-  archivedOrders.forEach(o => { if (o && o.id) orderMap.set(String(o.id), o); });
-  activeOrders.forEach(o => { if (o && o.id) orderMap.set(String(o.id), o); });
-  const orders = Array.from(orderMap.values());
+  const orders = getStoredData('orders', []);
   const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
   const now = new Date();
   
@@ -3214,70 +3656,82 @@ function printSingleTableQR(tableNumber, qrUrl, targetUrl = '') {
   printWindow.document.close();
 }
 
-/* === admin.js === */
+/* === captain.js === */
 /**
- * Smart E-Menu - Super Admin & Kitchen Management Module
- * لوحة التحكم الشاملة لصاحب المطعم: إدارة الأصناف، الكباتن، المطبخ، والنسخ الاحتياطي
+ * Smart E-Menu - Captain POS Application Controller
+ * تطبيق كابتن الصالة بدون رموز في الأسماء مع التحقق من الحسابات المفعلة
  */
 
+let captainCart = [];
+let captainSelectedTable = 1;
+let captainCurrentCat = 'all';
+let captainSearch = '';
+let selectedCaptainId = null;
+
 // -------------------------------------------------------------
-// درج القائمة الجانبي للأدمن (--- زر)
+// درج القائمة الجانبي للكابتن (--- زر)
 // -------------------------------------------------------------
-function openAdminMenuSidebar() {
-  const m = document.getElementById('admin-menu-sidebar');
+function openCaptainMenuSidebar() {
+  const m = document.getElementById('captain-menu-sidebar');
   if (m) { m.classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
 }
-function closeASidebar() {
-  const m = document.getElementById('admin-menu-sidebar');
+function closePTSidebar() {
+  const m = document.getElementById('captain-menu-sidebar');
   if (m) { m.classList.add('hidden'); document.body.style.overflow = 'auto'; }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   if (typeof fetchUsersFromSupabase === 'function') fetchUsersFromSupabase();
-  initSuperAdmin();
+  initCaptainApp();
 });
 
-function initSuperAdmin() {
-  const loginView = document.getElementById('admin-login-view');
-  const dashView = document.getElementById('admin-dashboard-view');
-  if (!loginView && !dashView) return; // ليس في صفحة الأدمن
+function initCaptainApp() {
+  const loginView = document.getElementById('captain-login-view');
+  const posView = document.getElementById('captain-pos-view');
+  if (!loginView && !posView) return; // ليس في صفحة الكابتن
 
-  const session = getCurrentSession();
-
-  // فحص تسجيل دخول الأدمن
-  if (!session || session.role !== 'admin') {
-    showAdminLoginScreen();
+  const restId = typeof getActiveRestaurantId === 'function' ? getActiveRestaurantId() : 'fahma_dokhan';
+  if (restId === 'platform_market') {
+    alert('سوق المنصة المركزي مخصص للمنيو ولوحة الإدارة فقط لعدم الحاجة لشاشة كابتن صالة. جاري تحويلك للوحة إدارة المنصة...');
+    window.location.replace('admin.html?rest=platform_market');
     return;
   }
 
-  showAdminDashboard();
+  const session = getCurrentSession();
+  
+  // التحقق من تسجيل دخول الكابتن أو السوبر أدمن
+  if (!session || (session.role !== 'captain' && session.role !== 'admin' && session.role !== 'super_admin' && session.role !== 'assistant_super_admin')) {
+    const restParam = restId ? `?role=captain&rest=${encodeURIComponent(restId)}` : '?role=captain';
+    window.location.replace('login.html' + restParam);
+    return;
+  }
+
+  showCaptainPOSScreen(session);
 }
 
-function showAdminLoginScreen() {
-  const loginView = document.getElementById('admin-login-view');
-  const dashView = document.getElementById('admin-dashboard-view');
-  if (loginView) loginView.classList.remove('hidden');
-  if (dashView) dashView.classList.add('hidden');
+function showCaptainLoginScreen() {
+  document.getElementById('captain-login-view').classList.remove('hidden');
+  document.getElementById('captain-pos-view').classList.add('hidden');
 
   // إفراغ حقول الدخول تماماً لضمان الخصوصية والأمان
-  const usernameInput = document.getElementById('superadmin-username-input');
-  const pinInput = document.getElementById('superadmin-pin-input');
-  const rememberCheckbox = document.getElementById('superadmin-remember-me');
+  const usernameInput = document.getElementById('captain-username-input');
+  const pinInput = document.getElementById('captain-pin-input');
+  const rememberCheckbox = document.getElementById('captain-remember-me');
   if (usernameInput) usernameInput.value = '';
   if (pinInput) pinInput.value = '';
   if (rememberCheckbox) rememberCheckbox.checked = false;
+  try { resetFailedAttempts(); } catch(e){}
 }
 
-async function handleSuperAdminLogin(event) {
+async function handleCaptainLogin(event) {
   if (event) event.preventDefault();
-  const usernameInput = document.getElementById('superadmin-username-input');
-  const input = document.getElementById('superadmin-pin-input');
-  const errorEl = document.getElementById('superadmin-login-error');
-  const rememberCheckbox = document.getElementById('superadmin-remember-me');
-  const btn = document.getElementById('admin-login-btn');
+  const usernameInput = document.getElementById('captain-username-input');
+  const pinInput = document.getElementById('captain-pin-input');
+  const errorEl = document.getElementById('captain-login-error');
+  const rememberCheckbox = document.getElementById('captain-remember-me');
 
   const username = usernameInput ? usernameInput.value.trim() : '';
-  const pin = input ? input.value : '';
+  const pin = pinInput ? pinInput.value : '';
   const rememberMe = rememberCheckbox ? rememberCheckbox.checked : false;
 
   if (!username) {
@@ -3288,556 +3742,910 @@ async function handleSuperAdminLogin(event) {
     return;
   }
 
-  if (btn) btn.textContent = 'جاري التحقق... ⏳';
-
   const res = typeof loginUserAsync === 'function' 
     ? await loginUserAsync(username, pin, rememberMe) 
     : { success: false, message: 'تعذر التحقق من تسجيل الدخول' };
   
-  if (btn) btn.textContent = 'تسجيل الدخول 🚀';
-
   if (res.success) {
     if (errorEl) errorEl.classList.add('hidden');
 
-    const activeRest = res.restaurantId || (typeof getActiveRestaurantId === 'function' ? getActiveRestaurantId() : 'fahma_dokhan');
-    const restParam = activeRest ? `?rest=${encodeURIComponent(activeRest)}` : '';
+    const restId = res.restaurantId || (typeof getActiveRestaurantId === 'function' ? getActiveRestaurantId() : 'fahma_dokhan');
+    const restParam = restId ? `?rest=${encodeURIComponent(restId)}` : '';
 
     if (res.role === 'cashier') {
       window.location.href = 'cashier.html' + restParam;
-      return;
-    } else if (res.role === 'captain') {
-      window.location.href = 'captain.html' + restParam;
       return;
     } else if (res.role === 'super_admin' || res.role === 'assistant_super_admin') {
       window.location.href = 'super-admin.html';
       return;
     }
-    showAdminDashboard();
+    showCaptainPOSScreen(res.session);
   } else {
     if (errorEl) {
-      errorEl.textContent = res.message;
+      errorEl.textContent = res.message || 'اسم المستخدم أو كلمة المرور غير صحيحة!';
       errorEl.classList.remove('hidden');
     }
   }
 }
 
-function showAdminDashboard() {
-  const loginView = document.getElementById('admin-login-view');
-  const dashView = document.getElementById('admin-dashboard-view');
-  if (loginView) loginView.classList.add('hidden');
-  if (dashView) dashView.classList.remove('hidden');
-
-  loadAdminOrders();
-  loadAdminDishes();
-  loadAdminCaptains();
-  loadAdminSettings();
-  
-  if (typeof renderTableQRCardsContainer === 'function') {
-    loadAdminQR();
-  }
-}
-
-function loadAdminQR() {
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  const count = parseInt(config.tablesCount) || 20;
-  const countInput = document.getElementById('admin-qr-tables-count');
-  if (countInput) countInput.value = count;
-  renderTableQRCardsContainer('admin-qr-grid', count);
-}
-
-function updateQRTablesCountFromAdmin(newCount) {
-  const count = parseInt(newCount) || 20;
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  config.tablesCount = count;
-  setStoredData('config', config);
-  
-  const settingInput = document.getElementById('setting-tables');
-  if (settingInput) settingInput.value = count;
-
-  renderTableQRCardsContainer('admin-qr-grid', count);
-}
-
-// -------------------------------------------------------------
-// إدارة طاقم العمل والكاشير والكباتن (Staff & Users Management)
-// -------------------------------------------------------------
-async function loadAdminCaptains() {
-  const container = document.getElementById('admin-captains-table-body');
-  if (!container) return;
-
-  if (typeof fetchUsersFromSupabase === 'function') {
-    await fetchUsersFromSupabase();
-  }
-
-  const auth = getAuthConfig();
-  const allStaff = [];
-
-  // 1. إضافة الكاشير
-  if (auth.cashiers && auth.cashiers.length > 0) {
-    auth.cashiers.forEach(c => allStaff.push({ ...c, role: 'cashier' }));
-  }
-
-  // 2. إضافة الكباتن
-  if (auth.captains && auth.captains.length > 0) {
-    auth.captains.forEach(c => allStaff.push({ ...c, role: 'captain' }));
-  }
-
-  if (allStaff.length === 0) {
-    container.innerHTML = `
-      <tr>
-        <td colspan="6" class="text-center py-6 text-slate-500">لا يوجد موظفين مسجلين حالياً</td>
-      </tr>
-    `;
-    return;
-  }
-
-  container.innerHTML = allStaff.map(member => {
-    const isCashier = member.role === 'cashier';
-    const roleBadge = isCashier
-      ? `<span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-lg font-bold text-[11px] flex items-center gap-1 w-fit">💻 كاشير المطعم</span>`
-      : `<span class="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-lg font-bold text-[11px] flex items-center gap-1 w-fit">👨‍🍳 كابتن صالة</span>`;
-
-    return `
-      <tr class="border-b border-slate-800 hover:bg-slate-800/40 transition">
-        <td class="p-3">
-          <div class="font-bold text-white text-sm flex items-center gap-2">
-            <span>${member.name}</span>
-          </div>
-        </td>
-        <td class="p-3">
-          ${roleBadge}
-        </td>
-        <td class="p-3">
-          <span class="font-mono text-slate-300 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">${member.username || '-'}</span>
-        </td>
-        <td class="p-3">
-          <span class="font-mono bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 text-rose-400 font-bold text-xs">${member.pin}</span>
-        </td>
-        <td class="p-3">
-          <button onclick="handleToggleStaffStatus('${member.id}', '${member.role}')" class="px-3 py-1 rounded-full text-xs font-bold transition ${member.active ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30'}">
-            ${member.active ? 'مفعل (نشط) ✅' : 'معطل (موقوف) ❌'}
-          </button>
-        </td>
-        <td class="p-3 text-left">
-          <div class="flex items-center gap-1.5 justify-end">
-            <button onclick="openEditStaffModal('${member.id}', '${member.role}')" class="py-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold transition flex items-center gap-1">
-              <span>✏️ تعديل</span>
-            </button>
-            <button onclick="handleDeleteStaff('${member.id}', '${member.role}')" class="py-1 px-2.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-lg text-xs font-bold transition flex items-center gap-1">
-              <span>🗑️ حذف</span>
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-function openAddStaffModal() {
-  document.getElementById('staff-modal-title').textContent = "إضافة موظف جديد (كاشير / كابتن)";
-  document.getElementById('staff-form-id').value = "";
-  document.getElementById('staff-form-role').value = "cashier";
-  document.getElementById('staff-form-name').value = "";
-  document.getElementById('staff-form-username').value = "";
-  document.getElementById('staff-form-pin').value = "";
-  document.getElementById('staff-edit-modal').classList.remove('hidden');
-}
-
-function openAddCaptainModal() {
-  openAddStaffModal();
-}
-
-function openEditStaffModal(id, role = 'captain') {
-  const auth = getAuthConfig();
-  let member = null;
-
-  if (role === 'cashier' && auth.cashiers) {
-    member = auth.cashiers.find(x => x.id === id);
-  } else if (auth.captains) {
-    member = auth.captains.find(x => x.id === id);
-  }
-
-  if (!member) return;
-
-  document.getElementById('staff-modal-title').textContent = `تعديل بيانات: ${member.name}`;
-  document.getElementById('staff-form-id').value = member.id;
-  document.getElementById('staff-form-role').value = member.role || role;
-  document.getElementById('staff-form-name').value = member.name;
-  document.getElementById('staff-form-username').value = member.username || '';
-  document.getElementById('staff-form-pin').value = member.pin;
-  document.getElementById('staff-edit-modal').classList.remove('hidden');
-}
-
-function openEditCaptainModal(id) {
-  openEditStaffModal(id, 'captain');
-}
-
-function closeStaffModal() {
-  document.getElementById('staff-edit-modal').classList.add('hidden');
-}
-
-function closeCaptainModal() {
-  closeStaffModal();
-}
-
-async function saveStaffFromForm(e) {
-  e.preventDefault();
-  const id = document.getElementById('staff-form-id').value;
-  const role = document.getElementById('staff-form-role').value;
-  const name = document.getElementById('staff-form-name').value.trim();
-  const username = document.getElementById('staff-form-username').value.trim();
-  const pin = document.getElementById('staff-form-pin').value.trim();
-
-  if (id) {
-    const res = typeof updateStaffUserAsync === 'function'
-      ? await updateStaffUserAsync(id, { name, username, pin, role })
-      : { success: false, message: 'خطأ في التحديث' };
-    if (!res.success) { alert(res.message); return; }
-  } else {
-    const res = typeof addStaffUserAsync === 'function' 
-      ? await addStaffUserAsync(name, username, pin, role) 
-      : { success: false, message: 'خطأ في الإضافة' };
-    if (!res.success) { alert(res.message); return; }
-  }
-
-  closeStaffModal();
-  loadAdminCaptains();
-  alert("تم حفظ وتحديث بيانات الموظف بنجاح! ✅");
-}
-
-function saveCaptainFromForm(e) {
-  saveStaffFromForm(e);
-}
-
-async function handleToggleStaffStatus(id, role = 'captain') {
-  if (typeof toggleStaffUserActiveAsync === 'function') {
-    await toggleStaffUserActiveAsync(id, role);
-  } else if (typeof toggleCaptainActiveStateAsync === 'function') {
-    await toggleCaptainActiveStateAsync(id);
-  }
-  loadAdminCaptains();
-}
-
-function handleToggleCaptainStatus(id) {
-  handleToggleStaffStatus(id, 'captain');
-}
-
-async function handleDeleteStaff(id, role = 'captain') {
-  if (confirm("هل أنت متأكد من حذف هذا الحساب نهائياً من النظام؟")) {
-    if (typeof deleteStaffUserAsync === 'function') {
-      await deleteStaffUserAsync(id);
-    } else if (typeof deleteCaptainAsync === 'function') {
-      await deleteCaptainAsync(id);
+function sanitizeCaptainDisplayName(name) {
+  if (!name) return 'كابتن الصالة';
+  if (/[\u4e00-\u9fa5]/.test(name) || name.includes('賲') || name.includes('賈')) {
+    if (name.includes('Super Admin') || name.toLowerCase().includes('super')) {
+      return 'مدير المنظومة (Super Admin)';
     }
-    loadAdminCaptains();
+    return 'كابتن الصالة';
   }
+  return name;
 }
 
-function handleDeleteCaptain(id) {
-  handleDeleteStaff(id, 'captain');
-}
+function showCaptainPOSScreen(session) {
+  document.getElementById('captain-login-view').classList.add('hidden');
+  document.getElementById('captain-pos-view').classList.remove('hidden');
 
-async function handleUpdateAdminPin(e) {
-  e.preventDefault();
-  const newPinInput = document.getElementById('admin-new-pin');
-  const newPin = newPinInput ? newPinInput.value.trim() : '';
+  // تعيين اسم الكابتن بدون أي رموز
+  const cleanName = sanitizeCaptainDisplayName(session ? session.name : '');
+  document.querySelectorAll('.current-captain-name').forEach(el => el.textContent = cleanName);
 
-  const res = typeof changeAdminPinAsync === 'function' ? await changeAdminPinAsync(newPin) : changeAdminPin(newPin);
-  if (res.success) {
-    alert("تم حفظ وتحديث الرمز السري الجديد بنجاح! ✅");
-    if (newPinInput) newPinInput.value = '';
-  } else {
-    alert(res.message);
-  }
-}
+  // تهيئة الطاولات والفئات والأطباق
+  renderTablesGrid();
+  renderCaptainCategories();
+  renderCaptainDishes();
+  updateCaptainCartUI();
+  renderCaptainActiveOrders();
+  syncMenuFromSupabase();
 
-// -------------------------------------------------------------
-// إدارة النسخ الاحتياطي واستيراد/تصدير البيانات (Backup / Restore)
-// -------------------------------------------------------------
-function triggerDatabaseExport() {
-  const res = exportFullDatabaseBackup();
-  if (res.success) {
-    alert(`✅ تم تنزيل ملف النسخة الاحتياطية (${res.filename}) بنجاح على جهازك! احتفظ به دائماً لحماية بياناتك.`);
-  }
-}
-
-function triggerDatabaseImport() {
-  const fileInput = document.getElementById('backup-file-input');
-  if (!fileInput || !fileInput.files[0]) {
-    alert("يرجى اختيار ملف النسخة الاحتياطية (JSON) أولاً!");
-    return;
-  }
-
-  if (confirm("⚠️ تنبيه: استرجاع النسخة الاحتياطية سيقوم بتحديث كافة الأصناف والأسعار والإعدادات الحالية. هل تود المتابعة؟")) {
-    importDatabaseBackup(fileInput.files[0], (res) => {
-      alert(res.message);
-      if (res.success) {
-        location.reload();
-      }
+  // ربط البحث
+  const searchInput = document.getElementById('captain-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      captainSearch = e.target.value.toLowerCase().trim();
+      renderCaptainDishes();
     });
   }
-}
 
-// -------------------------------------------------------------
-// إدارة الطلبات وشاشة المطبخ (Orders & Kitchen Screen)
-// -------------------------------------------------------------
-function loadAdminOrders(filterStatus = 'all') {
-  const ordersListEl = document.getElementById('admin-orders-list');
-  const emptyEl = document.getElementById('admin-orders-empty');
-  if (!ordersListEl) return;
+  // المزامنة الحية للطاولات والطلبات النشطة محلياً وسحابياً (كل 2 ثانية)
+  setInterval(() => {
+    renderTablesGrid();
+    renderCaptainActiveOrders();
+    syncCaptainOrdersFromSupabase();
+  }, 2000);
 
-  const orders = getStoredData('orders', []);
-  
-  let filtered = orders;
-  if (filterStatus !== 'all') {
-    filtered = orders.filter(o => o.status === filterStatus);
-  }
-
-  if (filtered.length === 0) {
-    ordersListEl.innerHTML = '';
-    if (emptyEl) emptyEl.classList.remove('hidden');
-    return;
-  }
-
-  if (emptyEl) emptyEl.classList.add('hidden');
-
-  let html = '';
-  filtered.forEach(order => {
-    const isDineIn = order.type === 'dine-in';
-    const statusBadge = getOrderStatusBadge(order.status);
-    const dateFormatted = new Date(order.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-
-    let itemsRows = '';
-    order.items.forEach(item => {
-      itemsRows += `
-        <div class="flex justify-between items-center py-1 border-b border-slate-700/40 text-xs">
-          <div class="flex items-center gap-1.5">
-            <span class="bg-rose-500/20 text-rose-400 font-bold px-1.5 py-0.5 rounded text-[11px]">x${item.quantity}</span>
-            <span class="font-bold text-slate-100">${item.name}</span>
-          </div>
-          <span class="text-slate-400">${(item.price * item.quantity).toLocaleString()} ${order.currency || 'د.ع'}</span>
-        </div>
-      `;
-    });
-
-    html += `
-      <div class="glass-card rounded-2xl p-4 border border-slate-700/60 relative flex flex-col justify-between">
-        <div>
-          <div class="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-slate-800">
-            <div>
-              <div class="flex items-center gap-2">
-                <span class="text-[11px] font-mono text-slate-400">#${order.id}</span>
-                <span class="text-[11px] text-slate-400">🕒 ${dateFormatted}</span>
-              </div>
-              <div class="text-base font-black text-white mt-0.5 flex items-center gap-1.5">
-                ${isDineIn ? `🍽️ <span class="text-rose-400">طاولة رقم ${order.tableNumber}</span>` : `🛵 <span class="text-amber-400">طلب خارجي</span>`}
-              </div>
-              ${order.captainName ? `<div class="text-[11px] text-amber-300 font-bold">👨‍🍳 الكابتن: ${order.captainName}</div>` : ''}
-            </div>
-            <div>
-              ${statusBadge}
-            </div>
-          </div>
-
-          <div class="space-y-1 mb-3">
-            ${itemsRows}
-          </div>
-
-          ${order.notes ? `
-            <div class="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 mb-3">
-              📝 <b>ملاحظة:</b> ${order.notes}
-            </div>
-          ` : ''}
-        </div>
-
-        <div>
-          <div class="flex justify-between items-center pt-2 border-t border-slate-800 mb-3">
-            <span class="text-slate-400 text-xs">المجموع:</span>
-            <span class="text-base font-black text-rose-400">${order.total.toLocaleString()} ${order.currency || 'د.ع'}</span>
-          </div>
-
-          <div class="grid grid-cols-2 gap-2">
-            <button onclick="printKitchenTicketById('${order.id}')" class="bg-slate-800 hover:bg-slate-700 text-white py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border border-slate-600">
-              <span>🖨️ طباعة</span>
-            </button>
-
-            ${order.status === 'new' ? `
-              <button onclick="updateOrderStatus('${order.id}', 'preparing')" class="bg-amber-600 hover:bg-amber-500 text-white py-1.5 px-2 rounded-xl text-xs font-bold transition">
-                <span>👨‍🍳 تحضير</span>
-              </button>
-            ` : order.status === 'preparing' ? `
-              <button onclick="updateOrderStatus('${order.id}', 'completed')" class="bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 px-2 rounded-xl text-xs font-bold transition">
-                <span>✅ تم التجهيز</span>
-              </button>
-            ` : `
-              <button onclick="reopenOrderToCashier('${order.id}')" class="bg-slate-700 hover:bg-rose-700 text-slate-200 hover:text-white py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1">
-                <span>🔄 إعادة فتح للكاشير</span>
-              </button>
-            `}
-          </div>
-        </div>
-      </div>
-    `;
+  window.addEventListener('storage', () => {
+    renderTablesGrid();
+    renderCaptainActiveOrders();
+    renderCaptainDishes();
+    updateCaptainCartUI();
   });
-
-  ordersListEl.innerHTML = html;
-}
-
-function getOrderStatusBadge(status) {
-  switch (status) {
-    case 'new':
-      return `<span class="bg-rose-500/20 text-rose-400 border border-rose-500/40 text-[11px] font-black px-2 py-0.5 rounded-full animate-pulse">جديد 🔥</span>`;
-    case 'preparing':
-      return `<span class="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[11px] font-black px-2 py-0.5 rounded-full">تحضير ⏳</span>`;
-    case 'completed':
-      return `<span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[11px] font-black px-2 py-0.5 rounded-full">مكتمل ✅</span>`;
-    default:
-      return `<span class="bg-slate-700 text-slate-300 text-[11px] px-2 py-0.5 rounded-full">${status}</span>`;
-  }
-}
-
-async function updateOrderStatus(orderId, newStatus) {
-  const orders = getStoredData('orders', []);
-  const idx = orders.findIndex(o => o.id === orderId);
-  if (idx !== -1) {
-    orders[idx].status = newStatus;
-    setStoredData('orders', orders);
-    loadAdminOrders();
-    window.dispatchEvent(new Event('storage'));
-
-    const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-    const client = (typeof getSupabase === 'function') ? getSupabase() : null;
-
-    if (client) {
-      try {
-        await client.from('restaurant_orders').update({
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        }).eq('id', String(orderId));
-      } catch (e) {
-        console.warn("Supabase updateOrderStatus error:", e);
-      }
-    }
-
-    try {
-      if ('BroadcastChannel' in window) {
-        const bc = new BroadcastChannel('smart_emenu_channel');
-        bc.postMessage({ type: 'ORDERS_CHANGED', orderId: orderId, status: newStatus });
-        bc.close();
-      }
-    } catch (e) {}
-
-    if (client) {
-      try {
-        const ch = client.channel(`orders_channel_${restId}`);
-        ch.send({
-          type: 'broadcast',
-          event: 'table_order_update',
-          payload: { orderId: orderId, status: newStatus }
-        });
-      } catch (e) {}
-    }
-  }
-}
-window.updateOrderStatus = updateOrderStatus;
-
-async function reopenOrderToCashier(orderId) {
-  if (!confirm("هل أنت متأكد من إعادة فتح هذا الطلب وإرجاعه إلى شاشة الكاشير للتعديل عليه؟")) {
-    return;
-  }
-
-  const orders = getStoredData('orders', []);
-  const idx = orders.findIndex(o => o.id === orderId);
-  if (idx === -1) {
-    alert("لم يتم العثور على الطلب!");
-    return;
-  }
-
-  const targetOrder = orders[idx];
-  targetOrder.status = 'new';
-  delete targetOrder.paidAt;
-
-  setStoredData('orders', orders);
-
-  const archive = getStoredData('accounting_archive', []);
-  const archIdx = archive.findIndex(o => o && o.id === orderId);
-  if (archIdx !== -1) {
-    archive[archIdx].status = 'new';
-    delete archive[archIdx].paidAt;
-    setStoredData('accounting_archive', archive);
-  }
-
-  window.dispatchEvent(new Event('storage'));
-
-  loadAdminOrders();
-  if (typeof loadAdminAccounting === 'function') loadAdminAccounting();
-  if (typeof renderStats === 'function') renderStats();
-
-  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-  const client = (typeof getSupabase === 'function') ? getSupabase() : null;
-
-  if (client) {
-    try {
-      await client.from('restaurant_orders').update({
-        status: 'new',
-        updated_at: new Date().toISOString()
-      }).eq('id', String(orderId));
-    } catch (e) {
-      console.warn("Supabase reopenOrder error:", e);
-    }
-  }
 
   try {
     if ('BroadcastChannel' in window) {
       const bc = new BroadcastChannel('smart_emenu_channel');
-      bc.postMessage({ 
-        type: 'ORDER_REOPENED', 
-        orderId: orderId,
-        tableNumber: targetOrder.tableNumber,
-        order: targetOrder
-      });
-      bc.postMessage({ type: 'ORDERS_CHANGED' });
-      bc.close();
+      bc.onmessage = (ev) => {
+        if (ev.data) {
+          if (ev.data.type === 'ORDERS_CHANGED') {
+            // تحديث فوري من localStorage قبل انتظار Supabase
+            renderTablesGrid();
+            renderCaptainActiveOrders();
+            // ثم مزامنة سحابية في الخلفية
+            syncCaptainOrdersFromSupabase();
+          }
+          if (ev.data.type === 'DISH_AVAILABILITY_CHANGED' || ev.data.type === 'DISH_SAVED' || ev.data.type === 'DISH_DELETED') {
+            renderCaptainDishes();
+            updateCaptainCartUI();
+          }
+          if (ev.data.type === 'CALL_WAITER') {
+            handleCaptainTableServiceAlert('call_waiter', ev.data);
+          }
+          if (ev.data.type === 'REQUEST_BILL') {
+            handleCaptainTableServiceAlert('request_bill', ev.data);
+          }
+        }
+      };
     }
   } catch (e) {}
 
-  if (client) {
+  // تفعيل الاستماع للبث الفوري عبر السحابة
+  initCaptainCloudOrdersListener();
+}
+
+// -------------------------------------------------------------
+// إدارة وشاشات الكابتن (View A: خريطة الطاولات / View B: أخذ الطلب)
+// -------------------------------------------------------------
+let appendingToOrderId = null;
+
+window.captainTableAlerts = window.captainTableAlerts || {};
+
+function playCaptainServiceChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15); // A5
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.65);
+  } catch(e) {}
+}
+
+window.dismissCaptainTableAlert = function(tNum) {
+  if (window.captainTableAlerts && window.captainTableAlerts[tNum]) {
+    delete window.captainTableAlerts[tNum];
+    renderTablesGrid();
+  }
+};
+
+window.handleCaptainTableServiceAlert = function(type, payload) {
+  if (!payload || !payload.tableNumber) return;
+  const tNum = parseInt(payload.tableNumber);
+  if (isNaN(tNum) || tNum <= 0) return;
+
+  window.captainTableAlerts[tNum] = {
+    type: type,
+    time: payload.timestamp || Date.now(),
+    tableNumber: tNum
+  };
+
+  playCaptainServiceChime();
+  renderTablesGrid();
+
+  const isBill = (type === 'request_bill');
+  const alertTitle = isBill ? `💳 طاولة [ ${tNum} ] تطلب الفاتورة والحساب!` : `🛎️ طاولة [ ${tNum} ] تطلب حضور الكابتن للخدمة!`;
+
+  if (typeof showCaptainToast === 'function') {
+    showCaptainToast(alertTitle, isBill ? '💳' : '🛎️');
+  }
+};
+
+function renderTablesGrid() {
+  const container = document.getElementById('captain-tables-grid');
+  if (!container) return;
+
+  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
+  const tablesCount = config.tablesCount || 20;
+  const orders = getStoredData('orders', []);
+  
+  // خريطة الطلبات النشطة
+  const activeOrdersMap = new Map();
+  orders.filter(o => o.type === 'dine-in' && o.status !== 'completed' && o.status !== 'cancelled').forEach(o => {
+    const tNum = parseInt(o.tableNumber || o.table_number); if (tNum) activeOrdersMap.set(tNum, o);
+  });
+
+  let html = '';
+  for (let i = 1; i <= tablesCount; i++) {
+    const isOccupied = activeOrdersMap.has(i);
+    const order = activeOrdersMap.get(i);
+    const alertInfo = window.captainTableAlerts ? window.captainTableAlerts[i] : null;
+
+    let alertBadgeHtml = '';
+    let alertRingClass = '';
+    if (alertInfo) {
+      if (alertInfo.type === 'call_waiter') {
+        alertRingClass = 'ring-2 ring-amber-400 animate-pulse';
+        alertBadgeHtml = `
+          <div class="mb-2 p-1.5 rounded-xl bg-amber-500/30 border border-amber-400 text-amber-200 text-[10px] font-black flex items-center justify-between animate-pulse">
+            <span class="flex items-center gap-1"><span>🛎️</span><span>نداء الكابتن!</span></span>
+            <button type="button" onclick="event.stopPropagation();dismissCaptainTableAlert(${i})" class="px-1.5 py-0.5 rounded bg-amber-400 text-black font-black text-[9px] hover:bg-amber-300">تم الاستلام ✓</button>
+          </div>
+        `;
+      } else if (alertInfo.type === 'request_bill') {
+        alertRingClass = 'ring-2 ring-emerald-400 animate-pulse';
+        alertBadgeHtml = `
+          <div class="mb-2 p-1.5 rounded-xl bg-emerald-500/30 border border-emerald-400 text-emerald-200 text-[10px] font-black flex items-center justify-between animate-pulse">
+            <span class="flex items-center gap-1"><span>💳</span><span>طلب الفاتورة!</span></span>
+            <button type="button" onclick="event.stopPropagation();dismissCaptainTableAlert(${i})" class="px-1.5 py-0.5 rounded bg-emerald-400 text-black font-black text-[9px] hover:bg-emerald-300">تم ✓</button>
+          </div>
+        `;
+      }
+    }
+
+    if (isOccupied) {
+      const minsAgo = Math.floor((Date.now() - order.timestamp) / 60000);
+      html += `
+        <div onclick="openActiveTableModal(${i})" class="bg-amber-950/40 border-2 border-amber-500/70 ${alertRingClass} p-3.5 sm:p-4 rounded-3xl cursor-pointer transition flex flex-col justify-between shadow-xl hover:bg-amber-950/60 active:scale-95">
+          <div>
+            ${alertBadgeHtml}
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm sm:text-base font-black text-white">طاولة ${i}</span>
+              <span class="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>مشغولة</span>
+              </span>
+            </div>
+            <div class="space-y-1 bg-slate-950 p-2 rounded-2xl border border-slate-800 mb-2">
+              <div class="text-[10px] text-amber-300 font-mono">🕒 منذ ${minsAgo} دقيقة</div>
+              <div class="text-xs sm:text-sm font-black text-rose-400 font-mono">${order.total.toLocaleString()} ${config.currency}</div>
+              <div class="text-[10px] text-slate-400 truncate">${order.items.length} أصناف • ${sanitizeCaptainDisplayName(order.captainName)}</div>
+            </div>
+          </div>
+          <button type="button" class="w-full py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 rounded-xl text-[11px] font-black transition">
+            📋 كشف الحساب
+          </button>
+        </div>
+      `;
+    } else {
+      html += `
+        <div onclick="openCaptainOrderTakingView(${i})" class="bg-slate-900 border border-slate-800 hover:border-emerald-500/60 ${alertRingClass} p-3.5 sm:p-4 rounded-3xl cursor-pointer transition flex flex-col justify-between shadow-lg hover:bg-slate-850 active:scale-95 group">
+          <div>
+            ${alertBadgeHtml}
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm sm:text-base font-black text-white">طاولة ${i}</span>
+              <span class="w-2 h-2 rounded-full bg-slate-700"></span>
+            </div>
+            <div class="py-2.5 text-center text-[11px] text-slate-400 font-bold bg-slate-950/60 rounded-2xl border border-slate-800/80 mb-2">
+              ⚪ متاحة للطلب
+            </div>
+          </div>
+          <button type="button" class="w-full py-1.5 px-2 bg-emerald-600/20 group-hover:bg-emerald-600 text-emerald-300 group-hover:text-white border border-emerald-500/30 rounded-xl text-[11px] font-black transition">
+            ＋ فتح طلب جديد
+          </button>
+        </div>
+      `;
+    }
+  }
+  container.innerHTML = html;
+
+  const statFree = document.getElementById('captain-stat-free');
+  const statBusy = document.getElementById('captain-stat-busy');
+  if (statFree) statFree.textContent = `⚪ ${tablesCount - activeOrdersMap.size} متاحة`;
+  if (statBusy) statBusy.textContent = `🟢 ${activeOrdersMap.size} مشغولة`;
+}
+
+// فتح شاشة أخذ الطلب لطاولة معينة
+function openCaptainOrderTakingView(tableNum, appendOrderId = null) {
+  captainSelectedTable = tableNum;
+  appendingToOrderId = appendOrderId;
+  captainCart = [];
+
+  const tablesView = document.getElementById('captain-tables-view');
+  const orderView = document.getElementById('captain-order-view');
+  if (tablesView) tablesView.classList.add('hidden');
+  if (orderView) orderView.classList.remove('hidden');
+
+  const titleHeader = document.getElementById('captain-order-table-title');
+  if (titleHeader) {
+    titleHeader.textContent = appendOrderId 
+      ? `➕ إضافة أصناف لطاولة رقم [ ${tableNum} ]` 
+      : `طلب جديد - طاولة رقم [ ${tableNum} ]`;
+  }
+
+  const cartTableBadge = document.getElementById('captain-cart-table-badge');
+  if (cartTableBadge) cartTableBadge.textContent = `طاولة رقم ${tableNum}`;
+
+  renderCaptainCategories();
+  renderCaptainDishes();
+  updateCaptainCartUI();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// إغلاق شاشة أخذ الطلب والعودة لخريطة الطاولات
+function closeCaptainOrderTakingView() {
+  captainCart = [];
+  appendingToOrderId = null;
+
+  const notesInput = document.getElementById('captain-order-notes');
+  if (notesInput) notesInput.value = '';
+
+  const tablesView = document.getElementById('captain-tables-view');
+  const orderView = document.getElementById('captain-order-view');
+  if (orderView) orderView.classList.add('hidden');
+  if (tablesView) tablesView.classList.remove('hidden');
+
+  renderTablesGrid();
+  renderCaptainActiveOrders();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// -------------------------------------------------------------
+// كشف حساب وإدارة الطاولة المشغولة للكابتن (Active Table Modal)
+// -------------------------------------------------------------
+let currentActiveCaptainTableOrder = null;
+
+function openActiveTableModal(tableNum, order) {
+  if (!order) {
+    const orders = getStoredData('orders', []);
+    order = orders.find(o => o.type === 'dine-in' && o.status !== 'completed' && o.status !== 'cancelled' && parseInt(o.tableNumber || o.table_number) === tableNum);
+  }
+  if (!order) return;
+
+  currentActiveCaptainTableOrder = order;
+  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
+
+  const titleEl = document.getElementById('atm-table-title');
+  const metaEl = document.getElementById('atm-order-meta');
+  const itemsListEl = document.getElementById('atm-items-list');
+  const notesBoxEl = document.getElementById('atm-notes-box');
+  const notesTextEl = document.getElementById('atm-notes-text');
+  const totalEl = document.getElementById('atm-total-price');
+
+  if (titleEl) titleEl.textContent = `طاولة رقم [ ${tableNum} ] - مشغولة 🟢`;
+  
+  const timeFormatted = new Date(order.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+  const minsAgo = Math.floor((Date.now() - order.timestamp) / 60000);
+  if (metaEl) metaEl.textContent = `#${order.id} • 🕒 ${timeFormatted} (منذ ${minsAgo} دقيقة) • الكابتن: ${sanitizeCaptainDisplayName(order.captainName)}`;
+
+  renderCaptainActiveTableItems();
+
+  if (order.notes) {
+    if (notesBoxEl) notesBoxEl.classList.remove('hidden');
+    if (notesTextEl) notesTextEl.textContent = order.notes;
+  } else {
+    if (notesBoxEl) notesBoxEl.classList.add('hidden');
+  }
+
+  if (totalEl) totalEl.textContent = `${order.total.toLocaleString()} ${config.currency}`;
+
+  const modal = document.getElementById('active-table-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function renderCaptainActiveTableItems() {
+  const itemsListEl = document.getElementById('atm-items-list');
+  const totalEl = document.getElementById('atm-total-price');
+  if (!itemsListEl || !currentActiveCaptainTableOrder) return;
+  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
+
+  if (!currentActiveCaptainTableOrder.items || currentActiveCaptainTableOrder.items.length === 0) {
+    itemsListEl.innerHTML = `<div class="text-center py-4 text-xs text-rose-400 font-bold">لا توجد وجبات في هذا الطلب</div>`;
+    if (totalEl) totalEl.textContent = `0 ${config.currency}`;
+    return;
+  }
+
+  itemsListEl.innerHTML = currentActiveCaptainTableOrder.items.map((item, idx) => `
+    <div class="flex items-center justify-between py-2 px-2.5 bg-slate-900 rounded-xl border border-slate-800 text-xs">
+      <div class="flex-1 pr-1">
+        <div class="font-bold text-white">${item.name}</div>
+        <div class="text-[10px] text-slate-400 font-mono">${(item.price || 0).toLocaleString()} ${config.currency} للقطعة</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg p-0.5">
+          <button type="button" onclick="updateCaptainActiveTableItemQty(${idx}, -1)" class="w-6 h-6 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold active:scale-90">-</button>
+          <span class="w-7 text-center font-mono font-bold text-amber-300 text-xs">${item.quantity}</span>
+          <button type="button" onclick="updateCaptainActiveTableItemQty(${idx}, 1)" class="w-6 h-6 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold active:scale-90">+</button>
+        </div>
+        <span class="font-mono text-rose-400 font-bold min-w-[55px] text-left">${((item.price || 0) * item.quantity).toLocaleString()}</span>
+        <button type="button" onclick="removeCaptainActiveTableItem(${idx})" title="حذف الصنف من الطاولة" class="w-7 h-7 flex items-center justify-center text-rose-400 hover:text-white hover:bg-rose-600/80 rounded-lg transition active:scale-90">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+
+  const newTotal = currentActiveCaptainTableOrder.items.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0);
+  currentActiveCaptainTableOrder.total = newTotal;
+  if (totalEl) totalEl.textContent = `${newTotal.toLocaleString()} ${config.currency}`;
+}
+
+function updateCaptainActiveTableItemQty(idx, delta) {
+  if (!currentActiveCaptainTableOrder || !currentActiveCaptainTableOrder.items[idx]) return;
+  const item = currentActiveCaptainTableOrder.items[idx];
+  const newQty = (item.quantity || 1) + delta;
+  if (newQty <= 0) {
+    removeCaptainActiveTableItem(idx);
+    return;
+  }
+  item.quantity = newQty;
+  saveCaptainActiveTableOrderChanges();
+}
+
+function removeCaptainActiveTableItem(idx) {
+  if (!currentActiveCaptainTableOrder || !currentActiveCaptainTableOrder.items[idx]) return;
+  const item = currentActiveCaptainTableOrder.items[idx];
+  if (!confirm(`هل أنت متأكد من حذف [ ${item.name} ] من طلب الطاولة؟`)) return;
+
+  currentActiveCaptainTableOrder.items.splice(idx, 1);
+  if (currentActiveCaptainTableOrder.items.length === 0) {
+    if (confirm("أصبح الطلب بدون أي أصناف. هل تريد إلغاء الطلب وتفريغ الطاولة بالكامل؟")) {
+      cancelAndVoidActiveTable();
+      return;
+    }
+  }
+  saveCaptainActiveTableOrderChanges();
+}
+
+function saveCaptainActiveTableOrderChanges() {
+  if (!currentActiveCaptainTableOrder) return;
+  const orders = getStoredData('orders', []);
+  const idx = orders.findIndex(o => o.id === currentActiveCaptainTableOrder.id);
+  if (idx !== -1) {
+    currentActiveCaptainTableOrder.total = currentActiveCaptainTableOrder.items.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0);
+    orders[idx] = { ...orders[idx], ...currentActiveCaptainTableOrder };
+    setStoredData('orders', orders);
+    window.dispatchEvent(new Event('storage'));
+
     try {
-      const ch = client.channel(`orders_channel_${restId}`);
-      await ch.send({
-        type: 'broadcast',
-        event: 'order_reopened',
-        payload: {
-          id: orderId,
-          tableNumber: targetOrder.tableNumber,
-          order: targetOrder
+      if ('BroadcastChannel' in window) {
+        new BroadcastChannel('smart_emenu_channel').postMessage({ 
+          type: 'ORDERS_CHANGED', 
+          orderId: currentActiveCaptainTableOrder.id 
+        });
+      }
+    } catch(e) {}
+
+    // مزامنة التعديل سحابياً مع Supabase
+    if (typeof sendCaptainOrderToSupabase === 'function') {
+      sendCaptainOrderToSupabase(orders[idx]);
+    }
+  }
+  renderCaptainActiveTableItems();
+  renderTablesGrid();
+  renderCaptainActiveOrders();
+}
+
+function cancelAndVoidActiveTable() {
+  if (!currentActiveCaptainTableOrder) return;
+  const tableNum = currentActiveCaptainTableOrder.tableNumber;
+  const orderId = currentActiveCaptainTableOrder.id;
+  if (!confirm(`هل أنت متأكد من إلغاء وحذف طلب طاولة [ ${tableNum} ] نهائياً وتفريغ الطاولة ومسحه من السحابة؟`)) return;
+
+  let orders = getStoredData('orders', []);
+  orders = orders.filter(o => o.id !== orderId);
+  setStoredData('orders', orders);
+  window.dispatchEvent(new Event('storage'));
+
+  try {
+    if ('BroadcastChannel' in window) {
+      new BroadcastChannel('smart_emenu_channel').postMessage({ 
+        type: 'ORDERS_CHANGED', 
+        orderId: orderId 
+      });
+    }
+  } catch(e) {}
+
+  // مسح الطلب نهائياً من Supabase لتفريغ الطاولة لدى الكاشير والصالة
+  if (typeof deleteCaptainOrderFromSupabase === 'function') {
+    deleteCaptainOrderFromSupabase(orderId);
+  }
+
+  closeActiveTableModal();
+  renderTablesGrid();
+  renderCaptainActiveOrders();
+  alert(`تم إلغاء الطلب #${orderId} وتفريغ طاولة [ ${tableNum} ] بنجاح! 🗑️`);
+}
+
+function closeActiveTableModal() {
+  const modal = document.getElementById('active-table-modal');
+  if (modal) modal.classList.add('hidden');
+  currentActiveCaptainTableOrder = null;
+}
+
+function addMoreItemsToActiveTable() {
+  if (!currentActiveCaptainTableOrder) return;
+  const tableNum = parseInt(currentActiveCaptainTableOrder.tableNumber);
+  const orderId = currentActiveCaptainTableOrder.id;
+  closeActiveTableModal();
+
+  // فتح شاشة أخذ الطلب مع ربطها بنفس الفاتورة
+  openCaptainOrderTakingView(tableNum, orderId);
+}
+
+function printActiveTableBill() {
+  if (!currentActiveCaptainTableOrder) return;
+  renderAndPrintCaptainTicket(currentActiveCaptainTableOrder);
+}
+
+function closeAndPayActiveTable() {
+  if (!currentActiveCaptainTableOrder) return;
+  const orderId = currentActiveCaptainTableOrder.id;
+  const tableNum = currentActiveCaptainTableOrder.tableNumber;
+
+  const orders = getStoredData('orders', []);
+  const idx = orders.findIndex(o => o.id === orderId);
+  if (idx !== -1) {
+    orders[idx].status = 'completed';
+    orders[idx].paidAt = Date.now();
+    setStoredData('orders', orders);
+  }
+
+  // مسح الطلب نهائياً من Supabase بعد المحاسبة لتفريغ الطاولة لدى الجميع
+  if (typeof deleteCaptainOrderFromSupabase === 'function') {
+    deleteCaptainOrderFromSupabase(orderId);
+  }
+
+  // طباعة وصل الحساب للزبون
+  printActiveTableBill();
+
+  // بث التحديث لجميع الصفحات فوراً
+  window.dispatchEvent(new Event('storage'));
+  try {
+    if ('BroadcastChannel' in window) {
+      new BroadcastChannel('smart_emenu_channel').postMessage({ 
+        type: 'ORDERS_CHANGED', 
+        orderId: orderId 
+      });
+    }
+  } catch(e) {}
+
+  closeActiveTableModal();
+  renderTablesGrid();
+  renderCaptainActiveOrders();
+
+  if (typeof showCaptainToast === 'function') {
+    showCaptainToast(`تمت محاسبة طاولة [ ${tableNum} ] وتفريغها بنجاح ✅`);
+  }
+}
+
+// -------------------------------------------------------------
+// عرض الفئات والأطباق
+// -------------------------------------------------------------
+function renderCaptainCategories() {
+  const container = document.getElementById('captain-categories-bar');
+  if (!container) return;
+
+  let categories = getStoredData('categories', DEFAULT_CATEGORIES);
+  // التأكد من وجود قسم "الكل" في البداية دائماً
+  const hasAll = categories.some(c => c.id === 'all');
+  if (!hasAll) {
+    categories = [{ id: "all", name: "الكل", nameEn: "All", icon: "🍽️" }, ...categories];
+  }
+
+  container.innerHTML = categories.map(cat => `
+    <button onclick="selectCaptainCategory('${cat.id}')" class="cat-pill ${captainCurrentCat === cat.id ? 'active' : ''} text-xs py-2 px-3.5 whitespace-nowrap rounded-xl transition font-bold flex items-center gap-1.5 flex-shrink-0">
+      <span>${cat.icon || '🍽️'}</span>
+      <span>${cat.name}</span>
+    </button>
+  `).join('');
+}
+
+function selectCaptainCategory(catId) {
+  captainCurrentCat = catId;
+  renderCaptainCategories();
+  renderCaptainDishes();
+}
+
+let captainSort = 'default';
+let captainAvailableOnly = false;
+
+function setCaptainSort(sortKey) {
+  captainSort = sortKey;
+  
+  // تحديث شكل أزرار الفرز
+  ['default', 'price-asc', 'price-desc', 'name-asc'].forEach(key => {
+    const btn = document.getElementById(`btn-cap-sort-${key}`);
+    if (btn) {
+      if (key === sortKey) {
+        btn.className = "sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-rose-600 text-white shadow-md shadow-rose-600/30";
+      } else {
+        btn.className = "sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-slate-950 text-slate-400 hover:bg-slate-800";
+      }
+    }
+  });
+
+  renderCaptainDishes();
+}
+
+function toggleCaptainAvailableOnly() {
+  captainAvailableOnly = !captainAvailableOnly;
+  const btn = document.getElementById('btn-cap-filter-avail');
+  if (btn) {
+    if (captainAvailableOnly) {
+      btn.className = "sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-emerald-600 text-white shadow-md shadow-emerald-600/30";
+    } else {
+      btn.className = "sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-slate-950 text-slate-400 hover:bg-slate-800";
+    }
+  }
+  renderCaptainDishes();
+}
+
+function renderCaptainDishes() {
+  const container = document.getElementById('captain-dishes-grid');
+  if (!container) return;
+
+  const dishes = getStoredData('dishes', DEFAULT_DISHES);
+  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
+
+  let filtered = dishes.filter(d => {
+    if (captainCurrentCat !== 'all' && d.categoryId !== captainCurrentCat) return false;
+    if (captainAvailableOnly && !d.available) return false;
+    if (captainSearch) {
+      const matchName = d.name && d.name.toLowerCase().includes(captainSearch);
+      const matchIng = d.ingredients && d.ingredients.toLowerCase().includes(captainSearch);
+      if (!matchName && !matchIng) return false;
+    }
+    return true;
+  });
+
+  // تطبيق الترتيب والفرز
+  if (captainSort === 'price-asc') {
+    filtered.sort((a, b) => a.price - b.price);
+  } else if (captainSort === 'price-desc') {
+    filtered.sort((a, b) => b.price - a.price);
+  } else if (captainSort === 'name-asc') {
+    filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="col-span-full py-12 text-center text-slate-500 text-xs">لا توجد أطباق مطابقة للبحث أو الفلتر المختار</div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(dish => {
+    const inCartItem = captainCart.find(i => i.id === dish.id);
+    const qty = inCartItem ? inCartItem.quantity : 0;
+
+    return `
+      <div onclick="${dish.available ? `addDishToCaptainCart('${dish.id}')` : ''}" class="p-2.5 rounded-2xl border transition cursor-pointer select-none flex flex-col justify-between active:scale-98 relative group ${
+        !dish.available 
+          ? 'bg-slate-950 border-slate-800 opacity-40 grayscale cursor-not-allowed' 
+          : qty > 0 
+            ? 'bg-rose-950/40 border-rose-500/80 shadow-lg shadow-rose-950/40 ring-1 ring-rose-500/50' 
+            : 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-850'
+      }">
+        <div>
+          <!-- الصف العلوي: صورة الطبق + الاسم + زر التفاصيل -->
+          <div class="flex items-start gap-2 mb-1.5">
+            ${dish.image ? `
+              <img src="${dish.image}" alt="${dish.name}" class="w-12 h-12 rounded-xl object-cover flex-shrink-0 border border-slate-800" loading="lazy" onerror="this.style.display='none'">
+            ` : `
+              <div class="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700/60 flex items-center justify-center text-lg flex-shrink-0">🍽️</div>
+            `}
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-1">
+                <h4 class="font-black text-white text-xs leading-snug line-clamp-2">${dish.name}</h4>
+                <button type="button" onclick="event.stopPropagation(); showDishDetailsModal('${dish.id}')" title="عرض تفاصيل ومكونات الطبق" class="w-5 h-5 rounded-full bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-400 text-[10px] flex items-center justify-center flex-shrink-0 transition">ℹ️</button>
+              </div>
+              ${dish.nameEn ? `<div class="text-[9px] text-slate-400 font-sans truncate">${dish.nameEn}</div>` : ''}
+            </div>
+          </div>
+
+          <!-- تفاصيل ومكونات الطبق -->
+          ${dish.ingredients ? `
+            <div class="text-[10px] text-slate-300 bg-slate-950/80 p-1.5 rounded-lg border border-slate-800/80 line-clamp-2 leading-relaxed mb-1.5">
+              <span class="text-amber-400 font-bold">🌿</span> ${dish.ingredients}
+            </div>
+          ` : dish.description ? `
+            <div class="text-[10px] text-slate-400 bg-slate-950/80 p-1.5 rounded-lg border border-slate-800/80 line-clamp-2 leading-relaxed mb-1.5">
+              ${dish.description}
+            </div>
+          ` : ''}
+
+          <!-- شارات السعرات والتمييز -->
+          <div class="flex items-center gap-1 flex-wrap mb-1.5">
+            ${dish.calories ? `<span class="text-[8px] bg-slate-800 text-amber-300 font-mono px-1.5 py-0.5 rounded border border-slate-700">⚡ ${dish.calories}</span>` : ''}
+            ${dish.isSpicy ? `<span class="text-[8px] bg-rose-950 text-rose-300 px-1.5 py-0.5 rounded border border-rose-900">🌶️ حار</span>` : ''}
+            ${dish.isPopular ? `<span class="text-[8px] bg-amber-950 text-amber-300 px-1.5 py-0.5 rounded border border-amber-900">⭐ مميز</span>` : ''}
+          </div>
+        </div>
+
+        <!-- الجزء السفلي: السعر وأزرار التحكم بالكمية -->
+        <div class="flex items-center justify-between pt-1.5 border-t border-slate-800/80 mt-auto">
+          <div class="flex flex-col">
+            <span class="text-rose-400 font-black text-xs font-mono">${Number(dish.price).toLocaleString()} ${config.currency}</span>
+            ${dish.oldPrice && Number(dish.oldPrice) > Number(dish.price) ? `
+              <div class="flex items-center gap-1">
+                <span class="text-[9px] text-slate-500 line-through">${Number(dish.oldPrice).toLocaleString()}</span>
+                <span class="text-[8px] bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold px-1 rounded">
+                  -${Math.round(((Number(dish.oldPrice) - Number(dish.price)) / Number(dish.oldPrice)) * 100)}%
+                </span>
+              </div>
+            ` : ''}
+          </div>
+          ${!dish.available ? `
+            <span class="text-[9px] text-rose-500 font-bold bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-900/50">غير متوفر</span>
+          ` : qty > 0 ? `
+            <div class="inline-flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-700" onclick="event.stopPropagation()">
+              <button onclick="changeCaptainCartQty('${dish.id}', -1)" class="w-5 h-5 rounded-md bg-slate-800 hover:bg-rose-600 text-slate-300 font-bold flex items-center justify-center text-[10px] active:scale-90">−</button>
+              <span class="text-[10px] font-mono font-bold text-white px-1">${qty}</span>
+              <button onclick="changeCaptainCartQty('${dish.id}', 1)" class="w-5 h-5 rounded-md bg-rose-600 text-white font-bold flex items-center justify-center text-[10px] active:scale-90">＋</button>
+            </div>
+          ` : `
+            <span class="text-[10px] text-slate-300 font-bold bg-slate-800 hover:bg-rose-600 hover:text-white px-2 py-0.5 rounded-lg transition">＋ إضافة</span>
+          `}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------
+// سلة الكابتن وإرسال الطلب للمطبخ
+// -------------------------------------------------------------
+function appendCaptainNote(text) {
+  const notesInput = document.getElementById('captain-order-notes');
+  if (!notesInput) return;
+  const current = notesInput.value.trim();
+  if (current) {
+    if (!current.includes(text)) {
+      notesInput.value = current + '، ' + text;
+    }
+  } else {
+    notesInput.value = text;
+  }
+}
+
+function clearCaptainCart() {
+  captainCart = [];
+  updateCaptainCartUI();
+  renderCaptainDishes();
+}
+
+function toggleCaptainMobileCart() {
+  const cartCol = document.getElementById('captain-cart-container-col');
+  if (cartCol) {
+    cartCol.scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+function addDishToCaptainCart(dishId) {
+  const dishes = getStoredData('dishes', DEFAULT_DISHES);
+  const dish = dishes.find(d => String(d.id) === String(dishId));
+  if (!dish || !dish.available) return;
+
+  const idx = captainCart.findIndex(i => String(i.id) === String(dishId));
+  if (idx !== -1) {
+    captainCart[idx].quantity += 1;
+  } else {
+    captainCart.push({
+      id: dish.id,
+      name: dish.name,
+      nameEn: dish.nameEn,
+      price: dish.price,
+      quantity: 1
+    });
+  }
+
+  updateCaptainCartUI();
+  renderCaptainDishes();
+}
+
+function changeCaptainCartQty(dishId, delta) {
+  const idx = captainCart.findIndex(i => String(i.id) === String(dishId));
+  if (idx !== -1) {
+    captainCart[idx].quantity += delta;
+    if (captainCart[idx].quantity <= 0) {
+      captainCart.splice(idx, 1);
+    }
+  }
+
+  updateCaptainCartUI();
+  renderCaptainDishes();
+}
+
+function updateCaptainCartUI() {
+  const container = document.getElementById('captain-cart-items');
+  const totalDisplay = document.getElementById('captain-cart-total');
+  const emptyDisplay = document.getElementById('captain-cart-empty');
+  const mobileBadge = document.getElementById('captain-mobile-cart-badge');
+  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
+
+  const totalCount = captainCart.reduce((sum, i) => sum + i.quantity, 0);
+  const total = captainCart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+
+  if (totalDisplay) totalDisplay.textContent = `${total.toLocaleString()} ${config.currency}`;
+  if (mobileBadge) mobileBadge.textContent = totalCount;
+
+  if (captainCart.length === 0) {
+    if (container) container.innerHTML = '';
+    if (emptyDisplay) emptyDisplay.classList.remove('hidden');
+    return;
+  }
+
+  if (emptyDisplay) emptyDisplay.classList.add('hidden');
+
+  if (container) {
+    container.innerHTML = captainCart.map(item => `
+      <div class="flex items-center justify-between p-2.5 bg-slate-950 rounded-2xl border border-slate-800 text-xs">
+        <div class="min-w-0 flex-1 pl-2">
+          <div class="font-black text-white truncate">${item.name}</div>
+          <div class="text-[11px] text-rose-400 font-bold font-mono">${(item.price * item.quantity).toLocaleString()} ${config.currency}</div>
+        </div>
+        <div class="inline-flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-xl p-1">
+          <button onclick="changeCaptainCartQty(${item.id}, -1)" class="w-6 h-6 rounded-lg bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-300 font-bold flex items-center justify-center text-xs">−</button>
+          <span class="font-black text-white text-xs px-1.5 font-mono">${item.quantity}</span>
+          <button onclick="changeCaptainCartQty(${item.id}, 1)" class="w-6 h-6 rounded-lg bg-rose-600 text-white font-bold flex items-center justify-center text-xs">＋</button>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+function submitCaptainOrder() {
+  if (captainCart.length === 0) {
+    alert("السلة فارغة، يرجى اختيار وجبات أولاً!");
+    return;
+  }
+
+  const session = getCurrentSession();
+  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
+  const notesInput = document.getElementById('captain-order-notes');
+  const notes = notesInput ? notesInput.value.trim() : '';
+  const total = captainCart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+  const orders = getStoredData('orders', []);
+
+  let orderToPrint = null;
+  let fullOrderToSync = null;
+
+  if (appendingToOrderId) {
+    // إلحاق أصناف جديدة بنفس الطلب المفتوح مسبقاً
+    const existingIdx = orders.findIndex(o => o.id === appendingToOrderId);
+    if (existingIdx !== -1) {
+      // دمج الأصناف
+      captainCart.forEach(cartItem => {
+        const itemIdx = orders[existingIdx].items.findIndex(it => it.id === cartItem.id);
+        if (itemIdx !== -1) {
+          orders[existingIdx].items[itemIdx].quantity += cartItem.quantity;
+        } else {
+          orders[existingIdx].items.push({ ...cartItem });
         }
       });
-    } catch (e) {}
+      orders[existingIdx].total += total;
+      if (notes) {
+        orders[existingIdx].notes = orders[existingIdx].notes 
+          ? `${orders[existingIdx].notes} | [إضافة]: ${notes}` 
+          : `[إضافة]: ${notes}`;
+      }
+      setStoredData('orders', orders);
+      fullOrderToSync = orders[existingIdx];
+
+      // بون المطبخ للأصناف المضافة حديثاً فقط
+      orderToPrint = {
+        id: orders[existingIdx].id + '-ADD',
+        type: 'dine-in',
+        tableNumber: captainSelectedTable,
+        captainName: sanitizeCaptainDisplayName(session ? session.name : 'الصالة'),
+        items: [...captainCart],
+        notes: `(إلحاق طلب لطاولة ${captainSelectedTable}) ${notes}`,
+        total: total,
+        currency: config.currency,
+        timestamp: Date.now()
+      };
+    }
   }
 
-  const tableInfo = targetOrder.tableNumber ? `لطاولة [ ${targetOrder.tableNumber} ]` : '';
-  alert(`✅ تم إعادة فتح الطلب #${orderId} ${tableInfo} بنجاح!\nتم إرجاعه إلى شاشة الكاشير ليتمكن من التعديل عليه.`);
-}
-window.reopenOrderToCashier = reopenOrderToCashier;
-
-function clearCompletedOrders() {
-  if (confirm("هل أنت متأكد من حذف وأرشفة الطلبات المكتملة؟")) {
-    const orders = getStoredData('orders', []);
-    const active = orders.filter(o => o.status !== 'completed');
-    setStoredData('orders', active);
-    loadAdminOrders();
+  if (!orderToPrint) {
+    // طلب جديد كلياً
+    const orderId = 'ORD-' + Date.now() + '-' + Math.floor(100 + Math.random() * 900);
+    const newOrder = {
+      id: orderId,
+      type: 'dine-in',
+      tableNumber: captainSelectedTable,
+      captainName: sanitizeCaptainDisplayName(session ? session.name : 'الصالة'),
+      captainId: session ? session.captainId : null,
+      items: [...captainCart],
+      notes: notes,
+      total: total,
+      currency: config.currency,
+      status: 'pending_kitchen',
+      source: 'captain',
+      timestamp: Date.now()
+    };
+    orders.unshift(newOrder);
+    setStoredData('orders', orders);
+    orderToPrint = newOrder;
+    fullOrderToSync = newOrder;
   }
-}
 
-function printKitchenTicketById(orderId) {
-  const orders = getStoredData('orders', []);
-  const order = orders.find(o => o.id === orderId);
-  if (order) {
-    renderAndPrintKitchenTicket(order);
+  // إرسال إشعار storage لتحديث الكاشير والشاشات فوراً محلياً
+  window.dispatchEvent(new Event('storage'));
+  try {
+    if ('BroadcastChannel' in window) {
+      new BroadcastChannel('smart_emenu_channel').postMessage({ 
+        type: 'ORDERS_CHANGED', 
+        orderId: fullOrderToSync ? fullOrderToSync.id : null 
+      });
+    }
+  } catch(e) {}
+
+  // إرسال ومزامنة الطلب سحابياً فوراً مع Supabase
+  if (fullOrderToSync && typeof sendCaptainOrderToSupabase === 'function') {
+    sendCaptainOrderToSupabase(fullOrderToSync);
   }
+
+  // طباعة البون
+  renderAndPrintCaptainTicket(orderToPrint);
+
+  const tableNumRecorded = captainSelectedTable;
+
+  // إغلاق شاشة الطلب وتفريغ السلة والعودة فوراً لخريطة الطاولات!
+  closeCaptainOrderTakingView();
+
+  alert(`تم إرسال طلب طاولة [ ${tableNumRecorded} ] للمطبخ وطباعة البون بنجاح! 🚀`);
 }
 
-function renderAndPrintKitchenTicket(order) {
+function renderAndPrintCaptainTicket(order) {
   if (typeof printOrderDirect === 'function') {
     printOrderDirect(order, 'kitchen');
   } else {
@@ -3845,1450 +4653,58 @@ function renderAndPrintKitchenTicket(order) {
   }
 }
 
-// -------------------------------------------------------------
-// إدارة الأصناف والأسعار (Dishes Management)
-// -------------------------------------------------------------
-function loadAdminDishes() {
-  const tableBody = document.getElementById('admin-dishes-table-body');
-  if (!tableBody) return;
-
-  const dishes = getStoredData('dishes', DEFAULT_DISHES);
-  const categories = getStoredData('categories', DEFAULT_CATEGORIES);
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-
-  let html = '';
-  dishes.forEach(dish => {
-    const cat = categories.find(c => c.id === dish.categoryId) || { name: dish.categoryId };
-    html += `
-      <tr class="border-b border-slate-800 hover:bg-slate-800/40 transition text-xs">
-        <td class="p-3">
-          <img src="${dish.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100'}" class="w-10 h-10 rounded-xl object-cover border border-slate-700" loading="lazy" />
-        </td>
-        <td class="p-3">
-          <div class="font-bold text-white">${dish.name}</div>
-          <div class="text-[10px] text-slate-400">${dish.nameEn || ''}</div>
-        </td>
-        <td class="p-3">
-          <span class="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">${cat.name}</span>
-        </td>
-        <td class="p-3">
-          <span class="font-black text-rose-400">${dish.price.toLocaleString()} ${config.currency}</span>
-        </td>
-        <td class="p-3">
-          <button onclick="toggleDishAvailability(${dish.id})" class="px-2 py-0.5 rounded-full text-[11px] font-bold transition ${dish.available ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}">
-            ${dish.available ? 'متوفر ✅' : 'نفذ ❌'}
-          </button>
-        </td>
-        <td class="p-3 text-left">
-          <div class="flex items-center gap-1.5 justify-end">
-            <button onclick="editDishModal(${dish.id})" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs transition" title="تعديل">
-              ✏️
-            </button>
-            <button onclick="deleteDish(${dish.id})" class="p-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-lg text-xs transition" title="حذف">
-              🗑️
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
-  });
-
-  tableBody.innerHTML = html;
-}
-
-function toggleDishAvailability(dishId) {
-  const dishes = getStoredData('dishes', DEFAULT_DISHES);
-  const idx = dishes.findIndex(d => d.id === dishId);
-  if (idx !== -1) {
-    dishes[idx].available = !dishes[idx].available;
-    setStoredData('dishes', dishes);
-    loadAdminDishes();
-  }
-}
-
-function deleteDish(dishId) {
-  if (confirm("هل أنت متأكد من حذف هذا الصنف من المنيو؟")) {
-    let dishes = getStoredData('dishes', DEFAULT_DISHES);
-    dishes = dishes.filter(d => d.id !== dishId);
-    setStoredData('dishes', dishes);
-    loadAdminDishes();
-  }
-}
-
-function openAddDishModal() {
-  const title = document.getElementById('dish-modal-title');
-  if (title) title.textContent = "إضافة صنف جديد للمنيو";
-  const form = document.getElementById('dish-form');
-  if (form) form.reset();
-  const idInput = document.getElementById('dish-form-id');
-  if (idInput) idInput.value = "";
-  const ingInput = document.getElementById('dish-form-ingredients');
-  if (ingInput) ingInput.value = "";
-  updateDishImagePreview('', 'dish-form-preview-img');
-  populateCategorySelect();
-  const modal = document.getElementById('dish-edit-modal');
-  if (modal) modal.classList.remove('hidden');
-}
-
-function editDishModal(dishId) {
-  const dishes = getStoredData('dishes', DEFAULT_DISHES);
-  const dish = dishes.find(d => d.id == dishId);
-  if (!dish) {
-    alert("لم يتم العثور على بيانات الصنف!");
-    return;
-  }
-
-  const title = document.getElementById('dish-modal-title');
-  if (title) title.textContent = "تعديل بيانات الصنف: " + dish.name;
-  
-  populateCategorySelect(dish.categoryId);
-  
-  const setVal = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.value = val !== undefined && val !== null ? val : '';
-  };
-  const setCheck = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.checked = !!val;
-  };
-
-  setVal('dish-form-id', dish.id);
-  setVal('dish-form-name', dish.name);
-  setVal('dish-form-name-en', dish.nameEn);
-  setVal('dish-form-price', dish.price);
-  setVal('dish-form-old-price', dish.oldPrice);
-  setVal('dish-form-calories', dish.calories);
-  setVal('dish-form-ingredients', dish.ingredients);
-  setVal('dish-form-desc', dish.description);
-  setVal('dish-form-image', dish.image);
-
-  updateDishImagePreview(dish.image, 'dish-form-preview-img');
-
-  setCheck('dish-form-free-delivery', dish.freeDelivery);
-  setCheck('dish-form-popular', dish.isPopular);
-  setCheck('dish-form-spicy', dish.isSpicy);
-  setCheck('dish-form-veg', dish.isVeg);
-  setCheck('dish-form-new', dish.isNew);
-
-  const modal = document.getElementById('dish-edit-modal');
-  if (modal) modal.classList.remove('hidden');
-}
-
-function closeDishModal() {
-  const modal = document.getElementById('dish-edit-modal');
-  if (modal) modal.classList.add('hidden');
-}
-
-// -------------------------------------------------------------
-// تصفير الحسابات والبدء من جديد (Reset Accounts & Orders)
-// -------------------------------------------------------------
-function confirmResetAllAccounts() {
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  const pin = prompt("⚠️ تحذير تصفير الحسابات والبدء من جديد:\nسيتم مسح كافة طلبات وفواتير الصندوق وإعادة تصفير الإيرادات اليومية ونهاية اليوم.\nلتأكيد التصفير، يرجى إدخال رمز PIN الإداري:");
-  if (!pin) return;
-  
-  const validPin = config.adminPin || '';
-  if (pin !== validPin && pin !== '') {
-    alert("❌ رمز PIN غير صحيح! تم إلغاء عملية التصفير للحفاظ على أمان البيانات.");
-    return;
-  }
-
-  // تصفير الطلبات
-  setStoredData('orders', []);
-  window.dispatchEvent(new Event('storage'));
-
-  loadAdminAccounting();
-  if (typeof loadAdminOrders === 'function') loadAdminOrders();
-  if (typeof renderStats === 'function') renderStats();
-
-  alert("تم تصفير كافة الحسابات والطلبات بنجاح! السجل الآن نظيف 100% وجاهز لبدء العمل من جديد ✅");
-}
-
-function populateCategorySelect(selectedId = null) {
-  const select = document.getElementById('dish-form-category');
-  if (!select) return;
-  const categories = getStoredData('categories', DEFAULT_CATEGORIES).filter(c => c.id !== 'all');
-  
-  select.innerHTML = categories.map(c => `
-    <option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${c.name}</option>
-  `).join('');
-}
-
-function saveDishFromForm(event) {
-  event.preventDefault();
-  const idVal = document.getElementById('dish-form-id')?.value;
-  let dishes = getStoredData('dishes', DEFAULT_DISHES);
-
-  const getVal = (id) => document.getElementById(id)?.value?.trim() || '';
-  const getCheck = (id) => !!document.getElementById(id)?.checked;
-  const oldPriceInput = getVal('dish-form-old-price');
-
-  const dishData = {
-    name: getVal('dish-form-name'),
-    nameEn: getVal('dish-form-name-en'),
-    categoryId: document.getElementById('dish-form-category')?.value || 'grills',
-    price: parseFloat(document.getElementById('dish-form-price')?.value) || 0,
-    oldPrice: oldPriceInput ? parseFloat(oldPriceInput) : null,
-    calories: getVal('dish-form-calories'),
-    ingredients: getVal('dish-form-ingredients'),
-    description: getVal('dish-form-desc'),
-    image: getVal('dish-form-image') || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600',
-    freeDelivery: getCheck('dish-form-free-delivery'),
-    isPopular: getCheck('dish-form-popular'),
-    isSpicy: getCheck('dish-form-spicy'),
-    isVeg: getCheck('dish-form-veg'),
-    isNew: getCheck('dish-form-new'),
-    available: true
-  };
-
-  if (!dishData.name) {
-    alert("يرجى إدخال اسم الصنف!");
-    return;
-  }
-
-  if (idVal) {
-    const idx = dishes.findIndex(d => d.id == idVal);
-    if (idx !== -1) {
-      dishes[idx] = { ...dishes[idx], ...dishData };
-    }
-  } else {
-    dishData.id = Date.now();
-    dishes.push(dishData);
-  }
-
-  setStoredData('dishes', dishes);
-  closeDishModal();
-  loadAdminDishes();
-  alert("تم حفظ وتحديث بيانات الصنف بنجاح! ✅");
-}
-
-// -------------------------------------------------------------
-// إعدادات المطعم والطابعة (Restaurant Settings)
-// -------------------------------------------------------------
-function applyRestaurantPreset(type) {
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-
-  if (type === 'grills') {
-    config.name = "مطعم فحمة ودخان";
-    config.nameEn = "Fahma & Dokhan Restaurant";
-    config.tagline = "أشهى المشاوي والدجاج على الفحم، البركر، الساندويشات الغربية والريزو";
-  } else if (type === 'burger') {
-    config.name = "مطعم ومطبخ البرجر الملكي";
-    config.nameEn = "Royal Burger & Fast Food";
-    config.tagline = "برجر مشوي على اللهب، بطاطا مقرمشة، وأشهى الساندويشات";
-  } else if (type === 'pizza') {
-    config.name = "مطعم بيانو بيتزا وباستا";
-    config.nameEn = "Piano Pizza & Italian Food";
-    config.tagline = "بيتزا إيطالية على الحطب، باستا طازجة ومقبلات شهية";
-  } else if (type === 'cafe') {
-    config.name = "كافيه ومقهى الرواق";
-    config.nameEn = "Al-Rawaq Specialty Coffee";
-    config.tagline = "قهوة مختصة، مشروبات ساخنة وباردة، وحلويات فرنسية فاخرة";
-  }
-
-  setStoredData('config', config);
-  loadRestaurantSettings();
-  alert(`تم تطبيق قالب (${config.name}) بنجاح! يمكنك الآن تعديل القائمة والأسعار بكل سهولة.`);
-}
-
-function toggleDineInBadge(checked) {
-  const badge = document.getElementById('dinein-status-badge');
-  if (badge) {
-    if (checked) {
-      badge.textContent = "مفعل (يمكن للزبائن الطلب)";
-      badge.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
-    } else {
-      badge.textContent = "مقفل (المنيو للعرض فقط)";
-      badge.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30";
-    }
-  }
-}
-
-function toggleTakeawayBadge(checked) {
-  const badge = document.getElementById('takeaway-pkg-badge');
-  if (badge) {
-    if (checked) {
-      badge.textContent = "الباقة مفعلة ✅";
-      badge.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
-    } else {
-      badge.textContent = "يتطلب تفعيل الباقة 🔒";
-      badge.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30";
-    }
-  }
-}
-
-function loadRestaurantSettings() {
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  
-  const setVal = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.value = val !== undefined ? val : '';
-  };
-  const setCheck = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.checked = !!val;
-  };
-
-  setVal('setting-name', config.name);
-  setVal('setting-name-en', config.nameEn);
-  setVal('setting-tagline', config.tagline);
-  setVal('setting-published-url', config.publishedUrl || '');
-  setVal('setting-currency', config.currency);
-  setVal('setting-tables', config.tablesCount);
-  setVal('setting-phone', config.phone);
-  setVal('setting-address', config.address || 'العراق - بغداد - الكرادة');
-  setVal('setting-hours', config.workingHours || '12:00 ظهراً - 02:00 بعد منتصف الليل');
-  setVal('setting-holidays', config.holidays || 'مفتوح طوال أيام الأسبوع');
-  setVal('setting-wifi-name', config.wifiName || 'Fahma_Dokhan_WiFi');
-  setVal('setting-wifi-pass', config.wifiPass || 'fahma2026');
-
-  // إعدادات الطباعة
-  const printSettings = typeof getPrintSettings === 'function' ? getPrintSettings() : { paperSize: '80mm', ticketType: 'dual' };
-  setVal('setting-printer-paper', printSettings.paperSize || '80mm');
-  setVal('setting-ticket-type', printSettings.ticketType || 'dual');
-  setCheck('setting-autoprint', config.autoPrintKitchenTicket !== false);
-
-  setCheck('setting-allow-dinein', config.allowDineInOrders);
-  toggleDineInBadge(config.allowDineInOrders);
-
-  setCheck('setting-takeaway-pkg', config.takeawayPackageActive);
-  toggleTakeawayBadge(config.takeawayPackageActive);
-}
-
-async function saveRestaurantSettings(e) {
-  if (e) e.preventDefault();
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-
-  config.name = document.getElementById('setting-name')?.value?.trim() || config.name;
-  config.nameEn = document.getElementById('setting-name-en')?.value?.trim() || config.nameEn;
-  config.tagline = document.getElementById('setting-tagline')?.value?.trim() || config.tagline;
-  config.publishedUrl = document.getElementById('setting-published-url')?.value?.trim() || config.publishedUrl;
-  config.currency = document.getElementById('setting-currency')?.value?.trim() || config.currency;
-  config.phone = document.getElementById('setting-phone')?.value?.trim() || config.phone;
-  config.address = document.getElementById('setting-address')?.value?.trim() || config.address;
-  config.tablesCount = parseInt(document.getElementById('setting-tables')?.value) || 20;
-
-  config.workingHours = document.getElementById('setting-hours')?.value?.trim() || config.workingHours;
-  config.holidays = document.getElementById('setting-holidays')?.value?.trim() || config.holidays;
-  config.wifiName = document.getElementById('setting-wifi-name')?.value?.trim() || config.wifiName;
-  config.wifiPass = document.getElementById('setting-wifi-pass')?.value?.trim() || config.wifiPass;
-  
-  config.allowDineInOrders = !!document.getElementById('setting-allow-dinein')?.checked;
-  config.takeawayPackageActive = !!document.getElementById('setting-takeaway-pkg')?.checked;
-  config.allowTakeawayOrders = config.takeawayPackageActive;
-  
-  const autoPrintCheck = document.getElementById('setting-autoprint');
-  if (autoPrintCheck) config.autoPrintKitchenTicket = autoPrintCheck.checked;
-
-  // حفظ إعدادات الطباعة
-  const paperSize = document.getElementById('setting-printer-paper')?.value || '80mm';
-  const ticketType = document.getElementById('setting-ticket-type')?.value || 'dual';
-  if (typeof savePrintSettings === 'function') {
-    savePrintSettings({ paperSize, ticketType });
-  }
-
-  setStoredData('config', config);
-
-  // إرسال إشعار لتحديث جميع الصفحات المفتوحة في المتصفح فوراً
-  window.dispatchEvent(new Event('storage'));
-
-  // مزامنة مع سحابة Supabase إذا توفر العميل
-  const client = typeof getSupabase === 'function' ? getSupabase() : null;
-  const restId = typeof getActiveRestaurantId === 'function' ? getActiveRestaurantId() : DEFAULT_RESTAURANT_ID;
-  if (client) {
-    try {
-      await client.from('restaurants').upsert([{
-        id: restId,
-        name: config.name,
-        name_en: config.nameEn,
-        tagline: config.tagline,
-        currency: config.currency,
-        tables_count: config.tablesCount,
-        phone: config.phone,
-        address: config.address,
-        published_url: config.publishedUrl,
-        working_hours: config.workingHours,
-        wifi_name: config.wifiName,
-        wifi_pass: config.wifiPass,
-        allow_dinein_orders: config.allowDineInOrders,
-        allow_takeaway_orders: config.allowTakeawayOrders,
-        takeaway_package_active: config.takeawayPackageActive,
-        auto_print: config.autoPrintKitchenTicket,
-        updated_at: new Date().toISOString()
-      }]);
-    } catch (err) {
-      console.warn("Supabase rest update:", err);
-    }
-  }
-  
-  if (typeof renderTableQRCardsContainer === 'function') {
-    renderTableQRCardsContainer('admin-qr-grid', config.tablesCount);
-  }
-  
-  alert("تم حفظ وتطبيق كافة الإعدادات بنجاح ومزامنتها على جميع شاشات النظام والسحابة! ✅");
-}
-
-// -------------------------------------------------------------
-// قسم المحاسبة وتقرير نهاية اليوم (Accounting & End of Day Report)
-// -------------------------------------------------------------
-let currentAdminAccountingPreset = 'today';
-let currentAdminAccountingCustomDate = null;
-
-function filterAdminAccounting(preset) {
-  currentAdminAccountingPreset = preset;
-  currentAdminAccountingCustomDate = null;
-
-  document.querySelectorAll('.acc-filter-btn').forEach(btn => {
-    btn.className = 'acc-filter-btn px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 hover:text-white transition flex items-center gap-1';
-  });
-
-  const activeBtn = document.getElementById(`acc-btn-${preset}`);
-  if (activeBtn) {
-    activeBtn.className = 'acc-filter-btn px-3 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white transition flex items-center gap-1';
-  }
-
-  const customInput = document.getElementById('admin-accounting-custom-date');
-  if (customInput) customInput.value = '';
-
-  loadAdminAccounting();
-}
-
-function filterAdminAccountingByCustomDate(dateVal) {
-  if (!dateVal) return;
-  currentAdminAccountingCustomDate = dateVal;
-  currentAdminAccountingPreset = 'custom';
-
-  document.querySelectorAll('.acc-filter-btn').forEach(btn => {
-    btn.className = 'acc-filter-btn px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 hover:text-white transition flex items-center gap-1';
-  });
-
-  const customInput = document.getElementById('admin-accounting-custom-date');
-  if (customInput) customInput.value = dateVal;
-
-  loadAdminAccounting();
-}
-
-function navigateAdminAccountingDay(offset) {
-  let baseDate = new Date();
-  if (currentAdminAccountingCustomDate) {
-    baseDate = new Date(currentAdminAccountingCustomDate);
-  } else if (currentAdminAccountingPreset === 'yesterday') {
-    baseDate.setDate(baseDate.getDate() - 1);
-  }
-
-  baseDate.setDate(baseDate.getDate() + offset);
-  const yyyy = baseDate.getFullYear();
-  const mm = String(baseDate.getMonth() + 1).padStart(2, '0');
-  const dd = String(baseDate.getDate()).padStart(2, '0');
-  const formattedDate = `${yyyy}-${mm}-${dd}`;
-
-  filterAdminAccountingByCustomDate(formattedDate);
-}
-
-function loadAdminAccounting() {
-  const report = getAccountingReport(currentAdminAccountingPreset, currentAdminAccountingCustomDate);
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-
-  // تحديث شارة الفترة المعروضة
-  const labelEl = document.getElementById('acc-active-period-label');
-  if (labelEl) {
-    if (currentAdminAccountingPreset === 'today') {
-      labelEl.textContent = `اليوم الحالي (${new Date().toLocaleDateString('ar-EG')})`;
-    } else if (currentAdminAccountingPreset === 'yesterday') {
-      const yDate = new Date();
-      yDate.setDate(yDate.getDate() - 1);
-      labelEl.textContent = `يوم أمس (${yDate.toLocaleDateString('ar-EG')})`;
-    } else if (currentAdminAccountingPreset === 'week') {
-      labelEl.textContent = `آخر 7 أيام`;
-    } else if (currentAdminAccountingPreset === 'month') {
-      labelEl.textContent = `هذا الشهر`;
-    } else if (currentAdminAccountingPreset === 'all') {
-      labelEl.textContent = `كامل السجل المحاسبي`;
-    } else if (currentAdminAccountingCustomDate) {
-      const cDate = new Date(currentAdminAccountingCustomDate);
-      labelEl.textContent = `تاريخ مخصص: ${cDate.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
-    }
-  }
-
-  // 1. تحديث بطاقات الأرقام والمؤشرات
-  const setElText = (id, text) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
-  };
-
-  setElText('acc-stat-total-revenue', `${report.totalRevenue.toLocaleString()} ${report.currency}`);
-  setElText('acc-stat-total-orders', report.totalOrders);
-  setElText('acc-stat-dinein-sales', `${report.dineInSales.toLocaleString()} ${report.currency}`);
-  setElText('acc-stat-dinein-count', `${report.dineInCount} طلب صالة`);
-  setElText('acc-stat-takeaway-sales', `${(report.takeawaySales + report.deliverySales).toLocaleString()} ${report.currency}`);
-  setElText('acc-stat-takeaway-count', `${report.takeawayCount + report.deliveryCount} طلب سفري وتوصيل`);
-
-  // 2. تحديث جدول الأصناف الأكثر مبيعاً
-  const topDishesTable = document.getElementById('acc-top-dishes-table-body');
-  const topDishesCount = document.getElementById('acc-top-dishes-count');
-  if (topDishesCount) topDishesCount.textContent = `${report.topDishes.length} صنف`;
-
-  if (topDishesTable) {
-    if (report.topDishes.length === 0) {
-      topDishesTable.innerHTML = `
-        <tr>
-          <td colspan="3" class="text-center py-8 text-slate-500 text-xs">لا توجد مبيعات مسجلة لهذه الفترة</td>
-        </tr>
-      `;
-    } else {
-      topDishesTable.innerHTML = report.topDishes.map((dish, i) => `
-        <tr class="border-b border-slate-800/60 hover:bg-slate-800/40 transition">
-          <td class="p-2.5">
-            <div class="font-bold text-white text-xs">${i + 1}. ${dish.name}</div>
-            <div class="text-[10px] text-slate-400">سعر الصنف: ${dish.price.toLocaleString()} ${report.currency}</div>
-          </td>
-          <td class="p-2.5 text-center font-black text-amber-400 text-xs">
-            ${dish.quantity}
-          </td>
-          <td class="p-2.5 text-left font-black text-emerald-400 text-xs">
-            ${dish.totalRevenue.toLocaleString()} ${report.currency}
-          </td>
-        </tr>
-      `).join('');
-    }
-  }
-
-  // 3. تحديث جدول سجل الفواتير المفصل
-  const invoicesTable = document.getElementById('acc-invoices-table-body');
-  const invoicesCount = document.getElementById('acc-invoices-count');
-  if (invoicesCount) invoicesCount.textContent = `${report.orders.length} فاتورة`;
-
-  if (invoicesTable) {
-    if (report.orders.length === 0) {
-      invoicesTable.innerHTML = `
-        <tr>
-          <td colspan="4" class="text-center py-8 text-slate-500 text-xs">لا توجد طلبات مسجلة لهذه الفترة</td>
-        </tr>
-      `;
-    } else {
-      invoicesTable.innerHTML = report.orders.map(order => {
-        const isDineIn = order.type === 'dine-in' || order.type === 'dinein' || order.tableNumber;
-        const typeBadge = isDineIn
-          ? `<span class="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold">🍽️ طاولة ${order.tableNumber || '-'}</span>`
-          : `<span class="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded text-[10px] font-bold">🛵 سفري/توصيل</span>`;
-
-        const timeStr = order.timestamp ? new Date(order.timestamp).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' }) : '-';
-
-        return `
-          <tr class="border-b border-slate-800/60 hover:bg-slate-800/40 transition">
-            <td class="p-2.5">
-              <div class="font-bold text-white text-xs">${order.id || 'ORD-000'}</div>
-              <div class="text-[10px] text-slate-400 font-mono">${timeStr}</div>
-            </td>
-            <td class="p-2.5">
-              ${typeBadge}
-            </td>
-            <td class="p-2.5 font-black text-rose-400 text-xs">
-              ${(order.total || 0).toLocaleString()} ${report.currency}
-            </td>
-            <td class="p-2.5 text-left">
-              <button onclick="printOrderDirectById('${order.id}')" class="py-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1">
-                <span>🖨️ طباعة</span>
-              </button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
-  }
-}
-
-function printAdminEndOfDayReport() {
-  printEndOfDayReportDirect(currentAdminAccountingPreset, currentAdminAccountingCustomDate);
-}
-
-function exportAdminReportCSV() {
-  exportAccountingReportCSV(currentAdminAccountingPreset, currentAdminAccountingCustomDate);
-}
-
-function printOrderDirectById(orderId) {
-  const orders = getStoredData('orders', []);
-  const order = orders.find(o => o.id === orderId);
-  if (order) {
-    if (typeof printOrderDirect === 'function') {
-      printOrderDirect(order);
-    } else {
-      window.print();
-    }
-  }
-}
-
-/* === app.js === */
-/**
- * Smart E-Menu - Client Engine & Cart Controller
- * محرك المنيو الرقمي، السلة، البحث، وإدارة الطلب الداخلي وطباعة المطبخ
- */
-
-// State
-let cart = [];
-let currentCategory = 'all';
-let currentFilter = 'all'; // all, popular, offers, veg, spicy
-let searchQuery = '';
-let selectedTableNumber = null;
-let currentOrderType = 'dine-in'; // dine-in, takeaway, delivery
-
-document.addEventListener('DOMContentLoaded', () => {
-  initApp();
-});
-
-function initApp() {
-  // 1. فحص معلمة الطاولة من الرابط مثل ?table=4 أو من الجلسة المحفوظة
-  const urlParams = new URLSearchParams(window.location.search);
-  const tableParam = urlParams.get('table');
-  if (tableParam) {
-    const parsed = parseInt(tableParam);
-    if (!isNaN(parsed) && parsed > 0) {
-      selectedTableNumber = parsed;
-      sessionStorage.setItem('customer_table_number', parsed);
-    }
-  } else {
-    const savedTable = sessionStorage.getItem('customer_table_number');
-    if (savedTable) {
-      const parsedSaved = parseInt(savedTable);
-      if (!isNaN(parsedSaved) && parsedSaved > 0) {
-        selectedTableNumber = parsedSaved;
-      }
-    }
-  }
-
-  if (selectedTableNumber && !isNaN(selectedTableNumber) && selectedTableNumber > 0) {
-    const tableBadge = document.getElementById('customer-table-badge');
-    if (tableBadge) {
-      tableBadge.textContent = `طاولة رقم ${selectedTableNumber}`;
-      tableBadge.classList.remove('hidden');
-    }
-
-    // إظهار شريط خدمة الطاولة السريعة (نداء الكابتن 🛎️ وطلب الفاتورة 💳)
-    const quickBar = document.getElementById('quick-table-service-bar');
-    const quickIndicator = document.getElementById('quick-table-indicator');
-    if (quickBar) {
-      quickBar.classList.remove('hidden');
-      quickBar.style.display = 'flex';
-    }
-    if (quickIndicator) {
-      quickIndicator.textContent = `طاولة رقم [ ${selectedTableNumber} ]`;
-    }
-  }
-
-  const currentRest = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-  let storedDishes = getStoredData('dishes', DEFAULT_DISHES);
-
-  const defaultCats = DEFAULT_CATEGORIES;
-  let storedCategories = getStoredData('categories', defaultCats);
-  if (!storedCategories || storedCategories.length === 0) {
-    storedCategories = defaultCats;
-    setStoredData('categories', defaultCats);
-  }
-
-  let storedConfig = getStoredData('config', null);
-  if (!storedConfig) {
-    storedConfig = getDefaultRestaurantConfig(currentRest);
-    if (currentRest === 'fahma_dokhan') {
-      setStoredData('config', storedConfig);
-    }
-  }
-
-  // 2. تحديث هوية المطعم
-  updateAppBranding();
-
-  // 3. عرض الفئات والأطباق
-  renderCategories();
-  renderMenuDishes();
-
-  // مزامنة حالة الباقة والإعدادات من Supabase
-  syncRestaurantConfigFromSupabase();
-  syncMenuFromSupabase();
-
-  // 4. استرجاع السلة السابقة إن وجدت
-  cart = getStoredData('cart', []);
-  updateCartUI();
-
-  // 5. تجهيز أرقام الطاولات في قائمة السلة
-  populateTableOptions();
-
-  // 6. تجهيز شارات المطبخ والإدارة
-  updateKitchenBadge();
-
-  // 7. ربط أحداث البحث وسلايدر الأقسام مع الحماية من الإكمال التلقائي
-  const searchInput = document.getElementById('menu-search-input');
-  if (searchInput) {
-    // تنظيف أي إكمال تلقائي خاطئ لبيانات الدخول من المتصفح (مثل super_admin)
-    const checkAndSanitizeSearch = () => {
-      const v = (searchInput.value || '').trim().toLowerCase();
-      if (v === 'super_admin' || v === 'admin' || v === 'cashier') {
-        searchInput.value = '';
-        searchQuery = '';
-        const clearBtn = document.getElementById('menu-search-clear-btn');
-        if (clearBtn) clearBtn.classList.add('hidden');
-        return true;
-      }
-      return false;
-    };
-
-    checkAndSanitizeSearch();
-
-    // فحص إضافي خفيف بعد التحميل لأن المتصفحات (Chrome) تحقن الإكمال التلقائي بعد أجزاء من الثانية
-    setTimeout(checkAndSanitizeSearch, 100);
-    setTimeout(checkAndSanitizeSearch, 400);
-    setTimeout(checkAndSanitizeSearch, 1000);
-
-    searchInput.addEventListener('input', (e) => {
-      if (checkAndSanitizeSearch()) {
-        renderMenuDishes();
-        return;
-      }
-      searchQuery = e.target.value.toLowerCase().trim();
-      const clearBtn = document.getElementById('menu-search-clear-btn');
-      if (clearBtn) {
-        if (searchQuery) clearBtn.classList.remove('hidden');
-        else clearBtn.classList.add('hidden');
-      }
-      renderMenuDishes();
-    });
-
-    searchInput.addEventListener('change', () => {
-      if (checkAndSanitizeSearch()) {
-        renderMenuDishes();
-      }
-    });
-
-    searchInput.addEventListener('focus', () => {
-      checkAndSanitizeSearch();
-    });
-  }
-
-  // مستمع لتحديث الإعدادات فورياً عند تغييرها من لوحة الأدمن أو الكاشير
-  window.addEventListener('storage', () => {
-    updateAppBranding();
-    renderCategories();
-    renderMenuDishes();
-    updateCartUI();
-  });
-
-  try {
-    if ('BroadcastChannel' in window) {
-      const bc = new BroadcastChannel('smart_emenu_channel');
-      bc.onmessage = (ev) => {
-        if (ev.data && (ev.data.type === 'DISH_AVAILABILITY_CHANGED' || ev.data.type === 'DISH_SAVED' || ev.data.type === 'DISH_DELETED')) {
-          renderMenuDishes();
-          updateCartUI();
-        }
-      };
-    }
-  } catch (e) {}
-
-  // تسجيل PWA Service Worker
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW registration error:', err));
-  }
-}
-
-// -------------------------------------------------------------
-// محرك التحقق من أوقات العمل الرسمية وحالة استقبال الطلبات
-// -------------------------------------------------------------
-function parseArabicTimeToMinutes(timeStr, isPMHint, isClosingTime = false) {
-  if (!timeStr) return null;
-  const clean = timeStr.trim();
-  const match = clean.match(/(\d{1,2}):(\d{2})/);
-  if (!match) return null;
-  let h = parseInt(match[1], 10);
-  let m = parseInt(match[2], 10);
-
-  const lower = clean.toLowerCase();
-  const hasMidnight = lower.includes('منتصف الليل') || lower.includes('نصف الليل');
-  const hasDawn = lower.includes('فجر') || lower.includes('صباح') || lower.includes('am');
-  const hasEvening = lower.includes('مساء') || lower.includes('ظهرا') || lower.includes('ظهر') || lower.includes('عصر') || lower.includes('ليل') || lower.includes('pm');
-
-  if (hasMidnight) {
-    if (h === 12 || h === 0) {
-      return isClosingTime ? 24 * 60 : 0;
-    } else if (h >= 1 && h <= 5) {
-      return h * 60 + m; // 1:00 AM, 2:00 AM
-    } else if (h >= 6 && h <= 11) {
-      // 10:00 ليلاً / بعد منتصف الليل تعني 10:00 مساءً (22:00)
-      h += 12;
-      return h * 60 + m;
-    }
-  }
-
-  const isPM = isPMHint !== undefined ? isPMHint : (hasEvening && !hasDawn);
-  if (isPM && h < 12) h += 12;
-  if (!isPM && hasDawn && h === 12) h = 0;
-
-  return h * 60 + m;
-}
-
-function parseWorkingHoursString(workingHoursText) {
-  let openMin = 10 * 60;  // 10:00 AM (600)
-  let closeMin = 24 * 60; // 12:00 Midnight (1440)
-
-  if (!workingHoursText) return { openMin, closeMin };
-
-  const matches = [...workingHoursText.matchAll(/(\d{1,2}):(\d{2})/g)];
-  if (matches.length >= 2) {
-    const m1 = matches[0];
-    const m2 = matches[1];
-
-    const sub1 = workingHoursText.substring(0, m2.index);
-    const sub2 = workingHoursText.substring(m2.index);
-
-    const t1 = parseArabicTimeToMinutes(sub1, false, false);
-    const t2 = parseArabicTimeToMinutes(sub2, undefined, true);
-
-    if (t1 !== null) openMin = t1;
-    if (t2 !== null) closeMin = t2;
-  }
-  return { openMin, closeMin };
-}
-
-function checkRestaurantOpenStatus(config, testDate) {
-  const cfg = config || (typeof getStoredData === 'function' ? getStoredData('config', DEFAULT_RESTAURANT_CONFIG) : {});
-
-  // 1. فحص التحكم اليدوي المباشر إن وُجد
-  if (cfg.storeManualStatus === 'open') {
-    return {
-      isOpen: true,
-      status: 'open',
-      reason: 'manual_open',
-      workingHoursText: cfg.workingHours || '',
-      allowPreorderNextDay: cfg.allowPreorderNextDay !== false
-    };
-  }
-  if (cfg.storeManualStatus === 'closed') {
-    return {
-      isOpen: false,
-      status: 'closed',
-      reason: 'manual_closed',
-      workingHoursText: cfg.workingHours || '',
-      allowPreorderNextDay: cfg.allowPreorderNextDay !== false
-    };
-  }
-
-  // 2. فحص الحقول الصريحة openTime و closeTime أولاً
-  let openMin = null;
-  let closeMin = null;
-
-  if (cfg.openTime && cfg.closeTime) {
-    const oMatch = cfg.openTime.match(/(\d{1,2}):(\d{2})/);
-    const cMatch = cfg.closeTime.match(/(\d{1,2}):(\d{2})/);
-    if (oMatch && cMatch) {
-      openMin = parseInt(oMatch[1], 10) * 60 + parseInt(oMatch[2], 10);
-      closeMin = parseInt(cMatch[1], 10) * 60 + parseInt(cMatch[2], 10);
-
-      // إذا كان وقت الإغلاق 00:00 (منتصف الليل) أو 24:00، فهذا يعني نهاية اليوم (1440 دقيقة)
-      if (closeMin === 0 && openMin > 0) {
-        closeMin = 24 * 60;
-      }
-    }
-  }
-
-  // إذا لم تكن موجودة بصيغة صريحة أو كانت متطابقة، نستنتجها بدقة من نص ساعات العمل workingHours
-  if (openMin === null || closeMin === null || openMin === closeMin) {
-    const parsed = parseWorkingHoursString(cfg.workingHours || "من 10:00 صباحاً وحتى 12:00 منتصف الليل");
-    openMin = parsed.openMin;
-    closeMin = parsed.closeMin;
-    if (closeMin === 0 && openMin > 0) {
-      closeMin = 24 * 60;
-    }
-  }
-
-  // إذا بقيا متساويين، نضبطهما افتراضياً على ساعات عمل قياسية (10 صباحاً إلى 12 منتصف الليل)
-  if (openMin === null || closeMin === null || openMin === closeMin) {
-    openMin = 10 * 60;
-    closeMin = 24 * 60;
-  }
-
-  const now = testDate || new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-  let isOpen = false;
-  if (openMin < closeMin) {
-    // دوام بنفس اليوم (مثلاً 10:00 صباحاً إلى 12:00 منتصف الليل 1440)
-    isOpen = currentMinutes >= openMin && currentMinutes < closeMin;
-  } else {
-    // دوام يمتد لما بعد منتصف الليل (مثلاً 12:00 ظهراً إلى 02:00 فجراً)
-    isOpen = currentMinutes >= openMin || currentMinutes < closeMin;
-  }
-
-  return {
-    isOpen,
-    status: isOpen ? 'open' : 'closed',
-    reason: isOpen ? 'in_working_hours' : 'outside_hours',
-    currentMinutes,
-    openMin,
-    closeMin,
-    workingHoursText: cfg.workingHours || 'من 10:00 صباحاً وحتى 12:00 منتصف الليل',
-    allowPreorderNextDay: cfg.allowPreorderNextDay !== false
-  };
-}
-
-// -------------------------------------------------------------
-// تحديث معلومات وهوية المطعم
-// -------------------------------------------------------------
-function updateAppBranding() {
-  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-  const config = getStoredData('config', getDefaultRestaurantConfig(restId));
-  
-  // تحديث النصوص والعناوين
-  document.querySelectorAll('.brand-restaurant-name').forEach(el => el.textContent = config.name);
-  document.querySelectorAll('.brand-restaurant-tagline').forEach(el => el.textContent = config.tagline);
-  document.querySelectorAll('.brand-currency').forEach(el => el.textContent = config.currency);
-  
-  // فحص وتحديث حالة أوقات العمل الرسمية
-  const storeStatus = checkRestaurantOpenStatus(config);
-
-  const statusDot = document.getElementById('header-status-dot');
-  const statusText = document.getElementById('header-status-text');
-  const heroBadge = document.getElementById('hero-status-badge');
-  const heroStatusText = document.getElementById('hero-status-text');
-  const closedBanner = document.getElementById('store-closed-banner');
-  const closedBannerHours = document.getElementById('store-closed-hours-text');
-
-  if (storeStatus.isOpen) {
-    if (statusDot) statusDot.className = "w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse";
-    if (statusText) {
-      statusText.textContent = "مفتوح الآن لاستقبال الطلبات";
-      statusText.className = "text-emerald-400 font-bold";
-    }
-    if (heroBadge) heroBadge.className = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold";
-    if (heroStatusText) heroStatusText.textContent = "مفتوح نرحب بكم";
-    if (closedBanner) closedBanner.classList.add('hidden');
-  } else {
-    if (statusDot) statusDot.className = "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
-    if (statusText) {
-      statusText.textContent = "مغلق حالياً • متاح حجز الغد 📅";
-      statusText.className = "text-amber-300 font-bold";
-    }
-    if (heroBadge) heroBadge.className = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold";
-    if (heroStatusText) heroStatusText.textContent = "مغلق • متاح حجز الغد 📅";
-    if (closedBanner) {
-      closedBanner.classList.remove('hidden');
-      if (closedBannerHours) closedBannerHours.textContent = config.workingHours || storeStatus.workingHoursText;
-    }
-  }
-
-  // تحديث نصوص الشريط العلوي (Top Header)
-  const headerName = document.getElementById('header-restaurant-name');
-  if (headerName) headerName.textContent = config.name;
-
-  const headerHours = document.getElementById('header-hours-text');
-  if (headerHours) headerHours.textContent = config.workingHours || '10:00 صباحاً - 10:00 بعد منتصف الليل';
-
-  const logoTarget = (config.logo && config.logo.trim()) ? config.logo.trim() : 'logo.svg';
-  document.querySelectorAll('.restaurant-logo-img').forEach(img => {
-    if (img.getAttribute('src') !== logoTarget) {
-      img.src = logoTarget;
-    }
-    img.onerror = () => { img.src = 'logo.svg'; img.onerror = null; };
-  });
-
-  const wifiNameEl = document.getElementById('info-wifi-name');
-  if (wifiNameEl) wifiNameEl.textContent = config.wifiName || 'Fahma_Dokhan_WiFi';
-
-  const wifiPassEl = document.getElementById('info-wifi-pass');
-  if (wifiPassEl) wifiPassEl.textContent = config.wifiPass || 'fahma2026';
-
-  const hoursEl = document.getElementById('info-hours');
-  if (hoursEl) hoursEl.textContent = config.workingHours || '10:00 صباحاً - 10:00 بعد منتصف الليل';
-
-  const holidaysEl = document.getElementById('info-holidays');
-  if (holidaysEl) holidaysEl.textContent = config.holidays || 'مفتوح طوال أيام الأسبوع';
-
-  // تحديث العنوان والموقع في الهيدر الرئيسي
-  const addressEl = document.getElementById('info-address');
-  if (addressEl) addressEl.textContent = config.address || 'العراق - نينوى - الشيماء';
-
-  // تحديث الرابط الحي لخريطة المطعم في الهيدر
-  const heroMapBtn = document.getElementById('hero-map-btn');
-  if (heroMapBtn) {
-    if (config.mapUrl && config.mapUrl.trim()) {
-      heroMapBtn.href = config.mapUrl.trim();
-    } else if (config.address && config.address.trim()) {
-      const q = encodeURIComponent(config.address.trim());
-      heroMapBtn.href = `https://www.google.com/maps/search/?api=1&query=${q}`;
-    } else {
-      heroMapBtn.href = 'https://maps.google.com';
-    }
-  }
-
-  // تحديث رقم هاتف المطعم المعتمد من الإعدادات للزبائن
-  const restPhone = config.phone || '07755009771';
-  const cartPhoneEl = document.getElementById('cart-restaurant-phone');
-  if (cartPhoneEl) cartPhoneEl.textContent = restPhone;
-
-  const cartPhoneBtn = document.getElementById('cart-restaurant-phone-btn');
-  if (cartPhoneBtn) cartPhoneBtn.href = `tel:${restPhone.replace(/\s+/g, '')}`;
-
-  const successPhoneText = document.getElementById('order-success-restaurant-phone-text');
-  if (successPhoneText) successPhoneText.textContent = restPhone;
-
-  const successPhoneBtn = document.getElementById('order-success-restaurant-phone-btn');
-  if (successPhoneBtn) successPhoneBtn.href = `tel:${restPhone.replace(/\s+/g, '')}`;
-
-  // تحديث درج الإعدادات والمعلومات الجانبي (--- زر)
-  const sH = document.getElementById('sidebar-hours');
-  if (sH) sH.textContent = config.workingHours || '10:00 صباحاً - 10:00 بعد منتصف الليل';
-  const sHd = document.getElementById('sidebar-holidays');
-  if (sHd) sHd.textContent = config.holidays || 'مفتوح طوال أيام الأسبوع';
-  const sAd = document.getElementById('sidebar-address');
-  if (sAd) sAd.textContent = config.address || 'العراق - نينوى - الشيماء';
-  const sWN = document.getElementById('sidebar-wifi-name');
-  if (sWN) sWN.textContent = config.wifiName || 'Fahma_Dokhan_WiFi';
-  const sWP = document.getElementById('sidebar-wifi-pass');
-  if (sWP) sWP.textContent = config.wifiPass || 'fahma2026';
-  const sPT = document.getElementById('sidebar-phone-text');
-  if (sPT) sPT.textContent = restPhone;
-  const sPB = document.getElementById('sidebar-phone-btn');
-  if (sPB) sPB.href = `tel:${restPhone.replace(/\s+/g, '')}`;
-
-  // هاتف احتياطي إضافي (الرقم الثاني)
-  const phone2 = config.phone2 ? config.phone2.trim() : '';
-  const p2Cont = document.getElementById('sidebar-phone2-container');
-  const p2Text = document.getElementById('sidebar-phone2-text');
-  const p2Btn = document.getElementById('sidebar-phone2-btn');
-  if (p2Cont && p2Text && p2Btn) {
-    if (phone2) {
-      p2Cont.classList.remove('hidden');
-      p2Text.textContent = phone2;
-      p2Btn.href = `tel:${phone2.replace(/\s+/g, '')}`;
-    } else {
-      p2Cont.classList.add('hidden');
-    }
-  }
-
-  // رابط وتواصل الواتساب المباشر في الدرج الجانبي
-  const waCont = document.getElementById('sidebar-whatsapp-container');
-  const waBtn = document.getElementById('sidebar-whatsapp-btn');
-  const waText = document.getElementById('sidebar-whatsapp-text');
-  const waNum = (config.whatsappNumber || config.phone || '').trim();
-  let waUrl = (config.whatsappUrl || '').trim();
-  if (!waUrl && waNum) {
-    const rawWa = waNum.replace(/\D/g, '').replace(/^0+/, '');
-    waUrl = `https://wa.me/${rawWa.startsWith('964') ? rawWa : '964' + rawWa}`;
-  }
-  if (waCont && waBtn && waText) {
-    if (waUrl) {
-      waCont.classList.remove('hidden');
-      waBtn.href = waUrl;
-      waText.textContent = waNum || restPhone;
-    } else {
-      waCont.classList.add('hidden');
-    }
-  }
-
-  // رابط الخريطة على جوجل ماب في الدرج الجانبي
-  const mapBtn = document.getElementById('sidebar-map-btn');
-  if (mapBtn) {
-    if (config.mapUrl && config.mapUrl.trim()) {
-      mapBtn.href = config.mapUrl.trim();
-    } else if (config.address && config.address.trim()) {
-      const q = encodeURIComponent(config.address.trim());
-      mapBtn.href = `https://www.google.com/maps/search/?api=1&query=${q}`;
-    } else {
-      mapBtn.href = 'https://maps.google.com';
-    }
-  }
-}
-
-// -------------------------------------------------------------
-// إدارة درج الأقسام الجانبي (Category Side Drawer)
-// -------------------------------------------------------------
-function openCategorySidebar() {
-  const modal = document.getElementById('categories-sidebar-modal');
-  if (modal) {
-    modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-  }
-}
-
-function closeCategorySidebar() {
-  const modal = document.getElementById('categories-sidebar-modal');
-  if (modal) {
-    modal.classList.add('hidden');
-    document.body.style.overflow = 'auto';
-  }
-}
-
-// -------------------------------------------------------------
-// إدارة درج الإعدادات والمعلومات الجانبي (Settings Side Drawer — زر ---)
-// -------------------------------------------------------------
-function openSettingsSidebar() {
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  
-  // تحديث بيانات المطعم في الدرج فور فتحه
-  const el = (id) => document.getElementById(id);
-  if (el('sidebar-hours')) el('sidebar-hours').textContent = config.workingHours || '10:00 صباحاً - 10:00 بعد منتصف الليل';
-  if (el('sidebar-holidays')) el('sidebar-holidays').textContent = config.holidays || 'مفتوح طوال أيام الأسبوع';
-  if (el('sidebar-address')) el('sidebar-address').textContent = config.address || 'العراق - نينوى - الشيماء';
-  if (el('sidebar-wifi-name')) el('sidebar-wifi-name').textContent = config.wifiName || 'Fahma_Dokhan_WiFi';
-  if (el('sidebar-wifi-pass')) el('sidebar-wifi-pass').textContent = config.wifiPass || 'fahma2026';
-  
-  const phone = config.phone || '07755009771';
-  if (el('sidebar-phone-text')) el('sidebar-phone-text').textContent = phone;
-  if (el('sidebar-phone-btn')) el('sidebar-phone-btn').href = `tel:${phone.replace(/\s+/g, '')}`;
-
-  const phone2 = config.phone2 ? config.phone2.trim() : '';
-  const p2Cont = el('sidebar-phone2-container');
-  const p2Text = el('sidebar-phone2-text');
-  const p2Btn = el('sidebar-phone2-btn');
-  if (p2Cont && p2Text && p2Btn) {
-    if (phone2) {
-      p2Cont.classList.remove('hidden');
-      p2Text.textContent = phone2;
-      p2Btn.href = `tel:${phone2.replace(/\s+/g, '')}`;
-    } else {
-      p2Cont.classList.add('hidden');
-    }
-  }
-
-  // الواتساب
-  const waCont = el('sidebar-whatsapp-container');
-  const waBtn = el('sidebar-whatsapp-btn');
-  const waText = el('sidebar-whatsapp-text');
-  const waNum = (config.whatsappNumber || config.phone || '').trim();
-  let waUrl = (config.whatsappUrl || '').trim();
-  if (!waUrl && waNum) {
-    const rawWa = waNum.replace(/\D/g, '').replace(/^0+/, '');
-    waUrl = `https://wa.me/${rawWa.startsWith('964') ? rawWa : '964' + rawWa}`;
-  }
-  if (waCont && waBtn && waText) {
-    if (waUrl) {
-      waCont.classList.remove('hidden');
-      waBtn.href = waUrl;
-      waText.textContent = waNum || phone;
-    } else {
-      waCont.classList.add('hidden');
-    }
-  }
-
-  const mapBtn = el('sidebar-map-btn');
-  if (mapBtn) {
-    if (config.mapUrl && config.mapUrl.trim()) {
-      mapBtn.href = config.mapUrl.trim();
-    } else if (config.address && config.address.trim()) {
-      const q = encodeURIComponent(config.address.trim());
-      mapBtn.href = `https://www.google.com/maps/search/?api=1&query=${q}`;
-    } else {
-      mapBtn.href = 'https://maps.google.com';
-    }
-  }
-
-  const modal = document.getElementById('settings-sidebar-modal');
-  if (modal) {
-    modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-  }
-}
-
-function closeSettingsSidebar() {
-  const modal = document.getElementById('settings-sidebar-modal');
-  if (modal) {
-    modal.classList.add('hidden');
-    document.body.style.overflow = 'auto';
-  }
-}
-
-function handleSettingsSidebarBackdropClick(e) {
-  // إغلاق الدرج عند النقر على الخلفية المعتمة خارج اللوحة
-  const drawer = e.currentTarget.querySelector('.bg-slate-900');
-  if (drawer && !drawer.contains(e.target)) {
-    closeSettingsSidebar();
-  }
-}
-
-function renderCategories() {
-  const sidebarContainer = document.getElementById('sidebar-categories-list');
-  const mainBarContainer = document.getElementById('main-categories-bar');
-  const categories = getStoredData('categories', DEFAULT_CATEGORIES);
-  const dishes = getStoredData('dishes', DEFAULT_DISHES);
-
-  // تحديث شارة القسم الحالي في الهيدر
-  const currentCatObj = categories.find(c => c.id === currentCategory) || { name: 'كل الأطباق', icon: '🍽️' };
-  const iconEl = document.getElementById('current-category-icon');
-  const nameEl = document.getElementById('current-category-name');
-  if (iconEl) iconEl.textContent = currentCatObj.icon || '🍽️';
-  if (nameEl) nameEl.textContent = currentCatObj.name || 'كل الأطباق';
-
-  // شريط الفئات الأفقي السريع
-  if (mainBarContainer) {
-    mainBarContainer.innerHTML = categories.map(cat => {
-      const isActive = currentCategory === cat.id;
-      return `
-        <button type="button" onclick="selectCategory('${cat.id}')" class="category-pill flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border text-xs font-black whitespace-nowrap transition active:scale-95 flex-shrink-0 ${
-          isActive
-            ? 'bg-gradient-to-r from-rose-600 to-rose-700 border-rose-500 text-white shadow-lg shadow-rose-600/30 ring-1 ring-rose-400'
-            : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
-        }">
-          <span class="text-sm">${cat.icon || '🍽️'}</span>
-          <span>${cat.name}</span>
-        </button>
-      `;
-    }).join('');
-  }
-
-  // قائمة الفئات في الدرج الجانبي
-  if (sidebarContainer) {
-    sidebarContainer.innerHTML = categories.map(cat => {
-      const count = cat.id === 'all' 
-        ? dishes.length 
-        : dishes.filter(d => d.categoryId === cat.id).length;
-
-      const isActive = currentCategory === cat.id;
-
-      return `
-        <button type="button" onclick="selectCategory('${cat.id}')" 
-          class="w-full text-right p-3 rounded-2xl border transition flex items-center justify-between gap-3 group active:scale-98 ${
-            isActive 
-              ? 'bg-gradient-to-r from-rose-600 to-rose-700 text-white border-rose-500 shadow-lg shadow-rose-600/30 font-black' 
-              : 'bg-slate-950/70 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700'
-          }">
-          <div class="flex items-center gap-3 min-w-0">
-            <span class="w-10 h-10 rounded-xl ${isActive ? 'bg-white/20' : 'bg-slate-900 border border-slate-800'} flex items-center justify-center text-xl flex-shrink-0">
-              ${cat.icon || '🍽️'}
-            </span>
-            <div class="truncate">
-              <div class="text-sm font-bold truncate ${isActive ? 'text-white' : 'text-slate-200 group-hover:text-white'}">${cat.name}</div>
-              <div class="text-[10px] ${isActive ? 'text-rose-200' : 'text-slate-500'}">اضغط لتصفح الأطباق</div>
-            </div>
-          </div>
-          <span class="text-xs font-mono font-bold px-2.5 py-1 rounded-xl ${
-            isActive 
-              ? 'bg-white/20 text-white' 
-              : 'bg-slate-900 text-slate-400 border border-slate-800'
-          } flex-shrink-0">
-            ${count} وجبة
-          </span>
-        </button>
-      `;
-    }).join('');
-  }
-}
-
-function selectCategory(catId) {
-  currentCategory = catId;
-  currentFilter = 'all';
-  renderCategories();
-  renderMenuDishes();
-  closeCategorySidebar();
-  // تظل الشاشة ثابتة في مكانها دون صعود أو نزول تلقائي
-}
-
-function selectQuickFilter(filter) {
-  currentFilter = filter;
-  document.querySelectorAll('.filter-chip').forEach(el => el.classList.remove('active'));
-  const target = document.getElementById(`filter-chip-${filter}`);
-  if (target) target.classList.add('active');
-  renderMenuDishes();
-}
-
-// -------------------------------------------------------------
-function clearMenuSearch() {
-  const searchInput = document.getElementById('menu-search-input');
-  if (searchInput) searchInput.value = '';
-  searchQuery = '';
-  const clearBtn = document.getElementById('menu-search-clear-btn');
-  if (clearBtn) clearBtn.classList.add('hidden');
-  renderMenuDishes();
-}
-
-// -------------------------------------------------------------
-// عرض قائمة الأطباق بدون نافذة تفاصيل (إضافة مباشرة للسلة)
-// -------------------------------------------------------------
-function renderMenuDishes() {
-  const container = document.getElementById('dishes-grid');
-  const countBadge = document.getElementById('dishes-count-badge');
-  const emptyState = document.getElementById('dishes-empty');
+function renderCaptainActiveOrders() {
+  const container = document.getElementById('captain-orders-list');
+  const countBadge = document.getElementById('captain-active-orders-count');
   if (!container) return;
 
-  // تنظيف إضافي إذا كان المتصفح قد ملأ خانة البحث باسم المستخدم
-  const searchInputEl = document.getElementById('menu-search-input');
-  if (searchInputEl) {
-    const v = (searchInputEl.value || '').trim().toLowerCase();
-    if (v === 'super_admin' || v === 'admin' || v === 'cashier') {
-      searchInputEl.value = '';
-      searchQuery = '';
-      const clearBtn = document.getElementById('menu-search-clear-btn');
-      if (clearBtn) clearBtn.classList.add('hidden');
-    }
+  const orders = getStoredData('orders', []);
+  const activeOrders = orders.filter(o => o.type === 'dine-in' && o.status !== 'completed');
+
+  if (countBadge) {
+    countBadge.textContent = `${activeOrders.length} طلب`;
   }
 
-  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-  const fallbackDishes = DEFAULT_DISHES;
-  const dishes = getStoredData('dishes', fallbackDishes);
-  const config = getStoredData('config', getDefaultRestaurantConfig(restId));
-
-  // تصفية الأطباق
-  let filtered = dishes.filter(dish => {
-    // 1. تصفية القسم
-    if (currentCategory !== 'all' && currentCategory !== 'offers') {
-      if (dish.categoryId !== currentCategory) return false;
-    }
-    if (currentCategory === 'offers' && !dish.oldPrice) return false;
-
-    // 2. تصفية الفلاتر السريعة
-    if (currentFilter === 'popular' && !dish.isPopular) return false;
-    if (currentFilter === 'veg' && !dish.isVeg) return false;
-    if (currentFilter === 'spicy' && !dish.isSpicy) return false;
-    if (currentFilter === 'new' && !dish.isNew) return false;
-
-    // 3. تصفية البحث
-    if (searchQuery) {
-      const matchName = dish.name && dish.name.toLowerCase().includes(searchQuery);
-      const matchEn = dish.nameEn && dish.nameEn.toLowerCase().includes(searchQuery);
-      const matchDesc = dish.description && dish.description.toLowerCase().includes(searchQuery);
-      if (!matchName && !matchEn && !matchDesc) return false;
-    }
-
-    return true;
-  });
-
-  if (countBadge) countBadge.textContent = `${filtered.length} صنف`;
-
-  if (filtered.length === 0) {
-    container.innerHTML = `
-      <div class="col-span-full py-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800 p-8 space-y-3">
-        <span class="text-4xl block">🔍</span>
-        <h4 class="text-white font-bold text-base">لا توجد أطباق مطابقة للبحث أو القسم المختار</h4>
-        <p class="text-xs text-slate-400">جرب اختيار قسم آخر أو إلغاء فلتر البحث</p>
-        <button onclick="clearMenuSearch(); selectCategory('all');" class="py-2.5 px-5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg transition active:scale-95">
-          عرض كل الأطباق وإلغاء البحث 🍽️
-        </button>
-      </div>
-    `;
+  if (activeOrders.length === 0) {
+    container.innerHTML = `<div class="text-center py-6 text-xs text-slate-500">لا توجد طلبات جارية بالصالة حالياً</div>`;
     return;
   }
 
-  if (emptyState) emptyState.classList.add('hidden');
-
-  const isTakeawayActive = (config.takeawayPackageActive === true) && (config.allowTakeawayOrders === true);
-  const isDineInActive = (config.allowDineInOrders === true);
-  const isOrderingAllowed = (config.planType !== 'basic') && (isTakeawayActive || isDineInActive);
-
-  const storeStatus = checkRestaurantOpenStatus(config);
-  const isStoreClosed = (!storeStatus.isOpen || config.is_active === false);
-
-  container.innerHTML = filtered.map(dish => {
-    // التحقق من حالة نفاذ الصنف وحالة المحل
-    const isSoldOut = (dish.available === false || dish.is_available === false || dish.status === 'out_of_stock');
-    const isAvailableToOrder = !isSoldOut && !isStoreClosed;
-
-    // التحقق من وجود الصنف بالسلة لمعرفة الكمية الحالية
-    const cartItem = cart.find(item => String(item.id) === String(dish.id));
-    const inCartQty = cartItem ? cartItem.quantity : 0;
-
-    // الشارات والعروض
-    let badgesHtml = '';
-    
-    // 1. شارة التوصيل المجاني
-    if (dish.freeDelivery) {
-      badgesHtml += `<span class="bg-emerald-600/95 text-white border border-emerald-400/40 text-[10px] font-black px-2 py-0.5 rounded-lg shadow-lg flex items-center gap-1 backdrop-blur-sm">🛵 توصيل مجاني</span>`;
-    }
-
-    const isFishOrWeighted = !!(dish.isWeighted || dish.categoryId === 'fish' || (dish.name && dish.name.includes('سمك')));
-    if (isFishOrWeighted) {
-      badgesHtml += `<span class="dish-badge-pill bg-blue-600 text-white font-black text-[10px] px-2 py-0.5 rounded-lg shadow-lg border border-blue-400/40">🐟 صنف بالوزن (حسب الطلب)</span>`;
-    }
-    // 2. شارة الخصم والتخفيض
-    if (dish.oldPrice && dish.oldPrice > dish.price) {
-      const discountPct = Math.round(((dish.oldPrice - dish.price) / dish.oldPrice) * 100);
-      badgesHtml += `<span class="bg-rose-600 text-white font-black text-[10px] px-2 py-0.5 rounded-lg shadow-lg">🔥 خصم ${discountPct}%</span>`;
-    } else if (dish.isPopular) {
-      badgesHtml += `<span class="dish-badge-pill bg-amber-500/90 text-black font-black text-[10px] px-2 py-0.5 rounded-lg shadow">⭐ الأكثر طلباً</span>`;
-    } else if (dish.isNew) {
-      badgesHtml += `<span class="dish-badge-pill bg-rose-600 text-white font-black text-[10px] px-2 py-0.5 rounded-lg shadow">✨ جديد</span>`;
-    } else if (dish.isVeg) {
-      badgesHtml += `<span class="dish-badge-pill bg-emerald-600/90 text-white font-bold text-[10px] px-2 py-0.5 rounded-lg shadow">🥗 نباتي</span>`;
-    } else if (dish.isSpicy) {
-      badgesHtml += `<span class="dish-badge-pill bg-rose-700 text-white font-bold text-[10px] px-2 py-0.5 rounded-lg shadow">🌶️ حار</span>`;
-    }
+  container.innerHTML = activeOrders.map(order => {
+    const timeFormatted = new Date(order.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    const itemsSummary = order.items.map(i => `${i.name} (x${i.quantity})`).join('، ');
 
     return `
-      <div class="dish-card cursor-pointer group active:scale-[0.98] transition ${isSoldOut ? 'opacity-60 grayscale-[40%]' : ''}" id="dish-card-${dish.id}" onclick="${isAvailableToOrder ? `addToCartDirect('${dish.id}')` : ''}">
-        <div class="dish-card-img-container relative overflow-hidden">
-          <div class="absolute top-2.5 right-2.5 z-20 flex flex-col gap-1.5 items-end">
-            ${badgesHtml}
-          </div>
-          <img src="${dish.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600'}" alt="${dish.name}" class="dish-card-img group-hover:scale-105 transition duration-300" loading="lazy" />
-          
-          ${isSoldOut ? `
-            <div class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center p-2 text-center z-20 backdrop-blur-[2px]">
-              <span class="text-xl mb-1">🔒</span>
-              <span class="bg-rose-600 text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-lg">نفد من المطعم ❌</span>
-              <span class="text-[9px] text-slate-300 font-bold mt-0.5">غير متوفر حالياً</span>
-            </div>
-          ` : isStoreClosed ? `
-            <div class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-2 text-center z-20 backdrop-blur-[1px]">
-              <span class="text-lg mb-0.5">🌙</span>
-              <span class="bg-amber-500/90 text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-full shadow-lg">المطعم مغلق حالياً</span>
-            </div>
-          ` : ''}
+      <div class="p-3 bg-slate-950 border border-slate-800 rounded-2xl space-y-1.5 text-xs shadow-md">
+        <div class="flex justify-between items-center">
+          <span class="font-black text-rose-400">طاولة رقم [ ${order.tableNumber} ]</span>
+          <span class="font-mono text-slate-400 text-[10px]">#${order.id} • ${timeFormatted}</span>
         </div>
-
-        <div class="p-4 flex-1 flex flex-col justify-between">
-          <div>
-            <div class="flex justify-between items-start gap-2 mb-1">
-              <h3 class="font-bold text-base text-white leading-tight group-hover:text-rose-400 transition">${dish.name}</h3>
-              ${dish.calories ? `<span class="text-[11px] text-slate-400 font-mono whitespace-nowrap">⚡ ${dish.calories}</span>` : ''}
-            </div>
-
-            ${dish.nameEn ? `<div class="text-xs text-slate-400 font-medium mb-2">${dish.nameEn}</div>` : ''}
-
-            <!-- عرض المكونات التفصيلية للطبق -->
-            ${dish.ingredients ? `
-              <div class="text-[11px] text-slate-300 bg-slate-950/70 p-2 rounded-xl border border-slate-800/80 mb-3 leading-relaxed">
-                <span class="text-amber-400 font-bold">🌿 المكونات:</span> ${dish.ingredients}
-              </div>
-            ` : dish.description ? `
-              <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed mb-3">
-                ${dish.description}
-              </p>
-            ` : ''}
+        <div class="text-[11px] text-slate-300 line-clamp-1 bg-slate-900 p-1.5 rounded-xl">
+          ${itemsSummary}
+        </div>
+        ${(order.isPreorder || (order.notes && order.notes.includes('حجز مسبق لليوم التالي'))) ? `
+          <div class="px-2 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold flex items-center justify-between">
+            <span>📅 حجز مسبق (اليوم التالي)</span>
+            <span class="text-[9px] text-amber-200">${order.preorderPreferredTime ? 'موعد: ' + order.preorderPreferredTime : 'مع بداية الافتتاح'}</span>
           </div>
-
-          <div class="pt-3 border-t border-slate-800 flex items-center justify-between gap-2" onclick="event.stopPropagation()">
-            <div>
-              <div class="text-base font-black text-rose-400">
-                ${dish.price.toLocaleString()} <span class="text-xs font-normal text-slate-400">${config.currency}</span>
-              </div>
-              ${dish.oldPrice ? `
-                <div class="text-xs text-slate-500 line-through">
-                  ${dish.oldPrice.toLocaleString()} ${config.currency}
-                </div>
-              ` : ''}
-            </div>
-
-            <!-- أزرار الإضافة المباشرة للسلة -->
-            <div>
-              ${!isOrderingAllowed ? `
-                <span class="text-[11px] font-bold text-slate-500 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">للعرض فقط</span>
-              ` : isSoldOut ? `
-                <button disabled class="py-1.5 px-3 bg-slate-900 border border-slate-800 text-slate-500 font-bold text-xs rounded-xl cursor-not-allowed opacity-70 flex items-center gap-1">
-                  <span>❌</span>
-                  <span>نفد الصنف</span>
-                </button>
-              ` : isStoreClosed ? `
-                <button disabled class="py-1.5 px-3 bg-amber-950/40 border border-amber-800/40 text-amber-400 font-bold text-xs rounded-xl cursor-not-allowed opacity-80 flex items-center gap-1" title="المطعم مغلق حالياً">
-                  <span>🌙</span>
-                  <span>المطعم مغلق</span>
-                </button>
-              ` : inCartQty > 0 ? `
-                <div class="qty-stepper">
-                  <button onclick="changeQuantity('${dish.id}', -1)" class="qty-btn" aria-label="تقليل">−</button>
-                  <span class="qty-count">${inCartQty}</span>
-                  <button onclick="changeQuantity('${dish.id}', 1)" class="qty-btn" aria-label="زيادة">+</button>
-                </div>
-              ` : `
-                <button onclick="addToCartDirect('${dish.id}')" class="btn-add-direct" aria-label="إضافة للسلة">
-                  <span>+</span>
-                  <span>إضافة</span>
-                </button>
-              `}
-            </div>
+        ` : ''}
+        ${order.notes ? `<div class="text-[10px] text-amber-300 font-bold">📝 ${order.notes}</div>` : ''}
+        <div class="border-t border-slate-800/80 pt-2 flex items-center justify-between gap-1.5 flex-wrap">
+          <span class="text-white font-black font-mono text-[11px]">${order.total.toLocaleString()} ${order.currency}</span>
+          <div class="flex items-center gap-1 flex-wrap">
+            <button onclick="openActiveTableModal(${order.tableNumber})" class="py-1 px-2 bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-500/40 rounded-xl text-[10px] font-bold transition flex items-center gap-1 active:scale-95">
+              <span>✏️ تعديل</span>
+            </button>
+            <button onclick="cancelCaptainOrderDirectly('${order.id}', ${order.tableNumber})" class="py-1 px-2 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-500/40 rounded-xl text-[10px] font-bold transition flex items-center gap-1 active:scale-95">
+              <span>❌ إلغاء</span>
+            </button>
+            <button onclick="printOrderDirectById('${order.id}', 'kitchen')" class="py-1 px-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white rounded-xl text-[10px] font-bold transition flex items-center gap-1 active:scale-95" title="طباعة بون المطبخ (101)">
+              <span>👨‍🍳 للمطبخ (101)</span>
+            </button>
+            <button onclick="printOrderDirectById('${order.id}', 'customer')" class="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-xl text-[10px] font-bold transition flex items-center gap-1 active:scale-95" title="طباعة فاتورة الحساب (100)">
+              <span>🧾 للحساب (100)</span>
+            </button>
           </div>
         </div>
       </div>
@@ -5296,1054 +4712,402 @@ function renderMenuDishes() {
   }).join('');
 }
 
-// -------------------------------------------------------------
-// عمليات السلة التلقائية (Cart Logic)
-// -------------------------------------------------------------
-function addToCartDirect(dishId) {
-  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-  const fallbackDishes = DEFAULT_DISHES;
-  const dishes = getStoredData('dishes', fallbackDishes);
-  const config = getStoredData('config', getDefaultRestaurantConfig(restId));
-  const storeStatus = checkRestaurantOpenStatus(config);
+function cancelCaptainOrderDirectly(orderId, tableNumber) {
+  if (!confirm(`هل أنت متأكد من إلغاء وحذف طلب طاولة [ ${tableNumber} ] بالكامل وتفريغها ومسحه من السحابة؟`)) return;
 
-  if (!storeStatus.isOpen || config.is_active === false) {
-    alert("عزيزنا الزبون، المطعم مغلق حالياً ولا يمكن استقبال طلبات جديدة في الوقت الحالي.");
-    return;
+  let orders = getStoredData('orders', []);
+  orders = orders.filter(o => o.id !== orderId);
+  setStoredData('orders', orders);
+  window.dispatchEvent(new Event('storage'));
+
+  try {
+    if ('BroadcastChannel' in window) {
+      new BroadcastChannel('smart_emenu_channel').postMessage({ 
+        type: 'ORDERS_CHANGED', 
+        orderId: orderId 
+      });
+    }
+  } catch(e) {}
+
+  // مسح الطلب نهائياً من Supabase لتفريغ الطاولة لدى الجميع
+  if (typeof deleteCaptainOrderFromSupabase === 'function') {
+    deleteCaptainOrderFromSupabase(orderId);
   }
 
+  renderTablesGrid();
+  renderCaptainActiveOrders();
+  alert(`تم إلغاء الطلب #${orderId} وتفريغ طاولة [ ${tableNumber} ] بنجاح! 🗑️`);
+}
+
+// -------------------------------------------------------------
+// نافذة تفاصيل ومكونات الطبق المتقدمة للكابتن (Dish Details Modal)
+// -------------------------------------------------------------
+function showDishDetailsModal(dishId) {
+  const dishes = getStoredData('dishes', DEFAULT_DISHES);
   const dish = dishes.find(d => String(d.id) === String(dishId));
-  if (!dish || dish.available === false || dish.is_available === false || dish.status === 'out_of_stock') {
-    alert("عذراً، هذا الصنف نفد من المطعم وغير متوفر حالياً.");
-    return;
-  }
-
-  const existing = cart.find(item => String(item.id) === String(dishId));
-  if (existing) {
-    existing.quantity += 1;
-  } else {
-    cart.push({
-      id: dish.id,
-      name: dish.name,
-      price: dish.price,
-      image: dish.image,
-      quantity: 1
-    });
-  }
-
-  setStoredData('cart', cart);
-  updateCartUI();
-  renderMenuDishes();
-}
-
-function changeQuantity(dishId, delta) {
-  const existingIndex = cart.findIndex(item => item.id === dishId);
-  if (existingIndex === -1) return;
-
-  cart[existingIndex].quantity += delta;
-  if (cart[existingIndex].quantity <= 0) {
-    cart.splice(existingIndex, 1);
-  }
-
-  setStoredData('cart', cart);
-  updateCartUI();
-  renderMenuDishes();
-}
-
-function updateCartUI() {
-  const hasFishInCart = cart.some(it => it.id === 'fd_fish_masgouf' || it.isWeighted || (it.name && it.name.includes('سمك')));
-  const fishSelector = document.getElementById('cart-fish-weight-selector');
-  if (fishSelector) {
-    if (hasFishInCart) {
-      fishSelector.classList.remove('hidden');
-      const approxWeightEl = document.getElementById('checkout-fish-approx-weight');
-      if (approxWeightEl) {
-        const valStr = (approxWeightEl.value || '').trim();
-        const parsedW = parseFloat(valStr);
-        const hasWeight = !isNaN(parsedW) && parsedW > 0;
-        const w = hasWeight ? parsedW : null;
-        cart.forEach(it => {
-          if (it.id === 'fd_fish_masgouf' || it.isWeighted || (it.name && it.name.includes('سمك'))) {
-            it.approxWeight = w;
-            const uPrice = it.unitPrice || 10000;
-            if (hasWeight) {
-              it.price = Math.round(uPrice * w);
-              it.name = 'سمك مسكوف عراقي بالوزن (' + w.toFixed(1) + ' كغم)';
-            } else {
-              it.price = 0;
-              it.name = 'سمك مسكوف عراقي بالوزن (سعر الكيلو 10,000 د.ع)';
-            }
-          }
-        });
-        const livePriceEl = document.getElementById('checkout-fish-live-price');
-        if (livePriceEl) {
-          if (hasWeight) {
-            livePriceEl.textContent = (Math.round(10000 * w)).toLocaleString() + ' د.ع (لوزن ' + w.toFixed(1) + ' كغم)';
-          } else {
-            livePriceEl.textContent = 'أدخل الوزن لمعاينة السعر (مثال: 1.5 كغم)';
-          }
-        }
-      }
-    } else {
-      fishSelector.classList.add('hidden');
-    }
-  }
-  const totalCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const totalPrice = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  if (!dish) return;
   const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  const isTakeawayActive = (config.takeawayPackageActive === true) && (config.allowTakeawayOrders === true);
-  const isDineInActive = (config.allowDineInOrders === true);
-  const isOrderingAllowed = (config.planType !== 'basic') && (isTakeawayActive || isDineInActive);
 
-  // تحديث زر السلة العلوي قرب تسجيل الدخول
-  const headerCartBtn = document.getElementById('header-cart-btn');
-  const headerCartCount = document.getElementById('header-cart-count');
-  const headerCartTotal = document.getElementById('header-cart-total');
-
-  if (headerCartBtn) {
-    if (isOrderingAllowed) {
-      headerCartBtn.classList.remove('hidden');
-      if (headerCartCount) headerCartCount.textContent = totalCount;
-      if (headerCartTotal) headerCartTotal.textContent = `${totalPrice.toLocaleString()} ${config.currency}`;
-    } else {
-      headerCartBtn.classList.add('hidden');
-    }
+  let modal = document.getElementById('dish-details-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'dish-details-modal';
+    modal.className = 'fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4';
+    document.body.appendChild(modal);
   }
 
-  // تحديث درج السلة المنزلق
-  renderCartDrawerItems(totalPrice, config.currency);
-}
-
-function setCustomerFishWeight(w) {
-  const el = document.getElementById('checkout-fish-approx-weight');
-  if (el) {
-    el.value = w;
-    updateCartUI();
-  }
-}
-window.setCustomerFishWeight = setCustomerFishWeight;
-
-function renderCartDrawerItems(totalPrice, currency) {
-  const container = document.getElementById('cart-items-container');
-  const totalDisplay = document.getElementById('cart-drawer-total');
-  const emptyDisplay = document.getElementById('cart-drawer-empty');
-  const checkoutSection = document.getElementById('cart-checkout-section');
-  if (!container) return;
-
-  if (cart.length === 0) {
-    container.innerHTML = '';
-    if (emptyDisplay) emptyDisplay.classList.remove('hidden');
-    if (checkoutSection) checkoutSection.classList.add('hidden');
-    if (totalDisplay) totalDisplay.textContent = `0 ${currency}`;
-    return;
-  }
-
-  if (emptyDisplay) emptyDisplay.classList.add('hidden');
-  if (checkoutSection) checkoutSection.classList.remove('hidden');
-  if (totalDisplay) totalDisplay.textContent = `${totalPrice.toLocaleString()} ${currency}`;
-
-  container.innerHTML = cart.map(item => `
-    <div class="flex items-center justify-between p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 gap-3">
-      <img src="${item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100'}" class="w-14 h-14 rounded-xl object-cover" />
-      
-      <div class="flex-1 min-w-0">
-        <h4 class="font-bold text-white text-sm truncate">${item.name}</h4>
-        <div class="text-xs text-rose-400 font-black mt-0.5">
-          ${(item.price * item.quantity).toLocaleString()} ${currency}
-        </div>
+  modal.innerHTML = `
+    <div class="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+      <div class="relative h-48 sm:h-56 bg-slate-950 flex items-center justify-center overflow-hidden">
+        ${dish.image ? `
+          <img src="${dish.image}" alt="${dish.name}" class="w-full h-full object-cover">
+        ` : `
+          <span class="text-6xl">🍽️</span>
+        `}
+        <button onclick="closeDishDetailsModal()" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-black/60 hover:bg-black/90 text-white font-bold flex items-center justify-center backdrop-blur-md transition">✕</button>
+        ${!dish.available ? `
+          <div class="absolute inset-0 bg-black/75 flex items-center justify-center">
+            <span class="bg-rose-600 text-white font-black text-sm px-4 py-1.5 rounded-xl shadow-lg">غير متوفر حالياً (نافذ)</span>
+          </div>
+        ` : ''}
       </div>
 
-      <div class="qty-stepper">
-        <button onclick="changeQuantity(${item.id}, -1)" class="qty-btn">−</button>
-        <span class="qty-count">${item.quantity}</span>
-        <button onclick="changeQuantity(${item.id}, 1)" class="qty-btn">+</button>
+      <div class="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h3 class="text-xl font-black text-white leading-tight">${dish.name}</h3>
+            ${dish.nameEn ? `<div class="text-xs text-slate-400 font-sans mt-0.5">${dish.nameEn}</div>` : ''}
+          </div>
+          <div class="flex flex-col items-end">
+            <div class="text-rose-400 font-black text-lg font-mono whitespace-nowrap">${Number(dish.price).toLocaleString()} ${config.currency}</div>
+            ${dish.oldPrice && Number(dish.oldPrice) > Number(dish.price) ? `
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-slate-500 line-through">${Number(dish.oldPrice).toLocaleString()}</span>
+                <span class="text-[10px] bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold px-1.5 py-0.2 rounded">
+                  خصم ${Math.round(((Number(dish.oldPrice) - Number(dish.price)) / Number(dish.oldPrice)) * 100)}% 🔥
+                </span>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+
+        <!-- المميزات والشارات -->
+        <div class="flex flex-wrap gap-1.5">
+          ${dish.calories ? `<span class="text-xs bg-slate-800 text-amber-300 font-mono px-2.5 py-1 rounded-xl border border-slate-700">⚡ ${dish.calories}</span>` : ''}
+          ${dish.isSpicy ? `<span class="text-xs bg-rose-950/90 text-rose-300 px-2.5 py-1 rounded-xl border border-rose-800">🌶️ حار جداً</span>` : ''}
+          ${dish.isVeg ? `<span class="text-xs bg-emerald-950/90 text-emerald-300 px-2.5 py-1 rounded-xl border border-emerald-800">🥗 نباتي</span>` : ''}
+          ${dish.isPopular ? `<span class="text-xs bg-amber-950/90 text-amber-300 px-2.5 py-1 rounded-xl border border-amber-800">⭐ الأكثر طلباً</span>` : ''}
+          ${dish.isNew ? `<span class="text-xs bg-blue-950/90 text-blue-300 px-2.5 py-1 rounded-xl border border-blue-800">✨ صنف جديد</span>` : ''}
+        </div>
+
+        <!-- المكونات الكاملة -->
+        ${dish.ingredients ? `
+          <div class="bg-slate-950/90 p-3.5 rounded-2xl border border-slate-800 space-y-1">
+            <div class="text-xs font-black text-amber-400 flex items-center gap-1.5">
+              <span>🌿</span>
+              <span>المكونات وتفاصيل التحضير:</span>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">${dish.ingredients}</p>
+          </div>
+        ` : ''}
+
+        <!-- الوصف الإضافي -->
+        ${dish.description && dish.description !== dish.ingredients ? `
+          <div class="text-xs text-slate-400 leading-relaxed bg-slate-950/50 p-3 rounded-2xl border border-slate-800/60">
+            ${dish.description}
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-3">
+        <button onclick="closeDishDetailsModal()" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition">إغلاق</button>
+        ${dish.available ? `
+          <button onclick="addDishToCaptainCart(${dish.id}); closeDishDetailsModal();" class="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-600 text-white font-black text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30">
+            <span>➕ إضافة إلى طلب الطاولة</span>
+          </button>
+        ` : `
+          <span class="text-xs text-slate-500 font-bold">الطبق غير متوفر للطلب</span>
+        `}
       </div>
     </div>
-  `).join('');
-}
-
-function openCartDrawer() {
-  updateAppBranding();
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  const selectorWrapper = document.getElementById('order-type-selector-wrapper');
-  const dineInBtn = document.getElementById('order-type-dine-in');
-  const takeawayBtn = document.getElementById('order-type-takeaway');
-  const tableGroup = document.getElementById('checkout-table-group');
-  const deliveryGroup = document.getElementById('checkout-delivery-group');
-
-  const isDineInAllowed = (config.allowDineInOrders === true);
-  const isTakeawayAllowed = (config.takeawayPackageActive === true) && (config.allowTakeawayOrders === true);
-
-  // 1. إذا كانت الصالة مفعلة والسفري مفعل معاً: نظهر أزرار التبديل كاملة
-  if (isDineInAllowed && isTakeawayAllowed) {
-    if (selectorWrapper) selectorWrapper.classList.remove('hidden');
-    if (dineInBtn) dineInBtn.classList.remove('hidden');
-    if (takeawayBtn) takeawayBtn.classList.remove('hidden');
-    selectOrderType(currentOrderType || 'dine-in');
-  } 
-  // 2. إذا كانت الصالة فقط مفعلة (السفري غير مفعل): نجعل السلة حصراً لطلب الصالة ونخفي زر السفري
-  else if (isDineInAllowed && !isTakeawayAllowed) {
-    if (selectorWrapper) selectorWrapper.classList.add('hidden');
-    if (dineInBtn) dineInBtn.classList.remove('hidden');
-    if (takeawayBtn) takeawayBtn.classList.add('hidden');
-    selectOrderType('dine-in');
-  } 
-  // 3. إذا كان السفري فقط مفعل (طلب الصالة مقفل): نجعل السلة حصراً لطلب التوصيل والسفري ونخفي زر الصالة
-  else if (!isDineInAllowed && isTakeawayAllowed) {
-    if (selectorWrapper) selectorWrapper.classList.add('hidden');
-    if (dineInBtn) dineInBtn.classList.add('hidden');
-    if (takeawayBtn) takeawayBtn.classList.remove('hidden');
-    selectOrderType('takeaway');
-  } 
-  // 4. إذا كان الاثنان مقفلين
-  else {
-    if (selectorWrapper) selectorWrapper.classList.add('hidden');
-    if (tableGroup) tableGroup.classList.add('hidden');
-    if (deliveryGroup) deliveryGroup.classList.add('hidden');
-  }
-
-  // فحص أوقات العمل الرسمية عند فتح السلة
-  const storeStatus = (typeof checkRestaurantOpenStatus === 'function') ? checkRestaurantOpenStatus(config) : { isOpen: true };
-  const closedNotice = document.getElementById('cart-closed-notice');
-  const noticeHours = document.getElementById('cart-notice-hours');
-  const submitBtn = document.getElementById('submit-order-btn');
-
-  if (!storeStatus.isOpen) {
-    if (closedNotice) closedNotice.classList.remove('hidden');
-    if (noticeHours) noticeHours.textContent = config.workingHours || storeStatus.workingHoursText;
-    if (submitBtn) {
-      submitBtn.innerHTML = `<span>📅 إرسال وتثبيت الطلب كحجز مسبق لليوم التالي</span><span>🚀</span>`;
-      submitBtn.className = "w-full py-3.5 px-4 bg-gradient-to-r from-purple-700 via-rose-700 to-amber-600 hover:from-purple-600 hover:to-amber-500 text-white font-black text-sm rounded-2xl shadow-xl shadow-purple-900/30 transition flex items-center justify-center gap-2 active:scale-95";
-    }
-  } else {
-    if (closedNotice) closedNotice.classList.add('hidden');
-    if (submitBtn) {
-      submitBtn.className = "w-full py-3.5 px-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-600/30 transition flex items-center justify-center gap-2 active:scale-95";
-    }
-  }
-
-  document.getElementById('cart-drawer-modal').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-}
-
-function closeCartDrawer() {
-  document.getElementById('cart-drawer-modal').classList.add('hidden');
-  document.body.style.overflow = 'auto';
-}
-
-function selectOrderType(type) {
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  const isDineInAllowed = (config.allowDineInOrders === true);
-  const isTakeawayAllowed = (config.takeawayPackageActive === true) && (config.allowTakeawayOrders === true);
-
-  if (type === 'dine-in' && !isDineInAllowed) {
-    if (isTakeawayAllowed) type = 'takeaway';
-    else return;
-  }
-  if ((type === 'takeaway' || type === 'delivery') && !isTakeawayAllowed) {
-    if (isDineInAllowed) type = 'dine-in';
-    else return;
-  }
-
-  currentOrderType = type;
-
-  // تحديث حالة الأزرار
-  const dineInBtn = document.getElementById('order-type-dine-in');
-  const takeawayBtn = document.getElementById('order-type-takeaway');
-  const submitBtn = document.getElementById('submit-order-btn');
-  const storeStatus = (typeof checkRestaurantOpenStatus === 'function') ? checkRestaurantOpenStatus(config) : { isOpen: true };
-
-  [dineInBtn, takeawayBtn].forEach(btn => {
-    if (btn) {
-      btn.classList.remove('bg-rose-600', 'text-white', 'border-rose-500');
-      btn.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-700');
-    }
-  });
-
-  const activeBtn = type === 'dine-in' ? dineInBtn : takeawayBtn;
-  if (activeBtn) {
-    activeBtn.classList.remove('bg-slate-800', 'text-slate-300', 'border-slate-700');
-    activeBtn.classList.add('bg-rose-600', 'text-white', 'border-rose-500');
-  }
-
-  // إظهار/إخفاء الحقول المناسبة
-  const tableGroup = document.getElementById('checkout-table-group');
-  const deliveryGroup = document.getElementById('checkout-delivery-group');
-
-  if (type === 'dine-in') {
-    if (tableGroup) tableGroup.classList.remove('hidden');
-    if (deliveryGroup) deliveryGroup.classList.add('hidden');
-    if (submitBtn) {
-      if (!storeStatus.isOpen) {
-        submitBtn.innerHTML = `<span>📅 حجز طاولة ووجبات لليوم التالي</span><span>🚀</span>`;
-      } else {
-        submitBtn.innerHTML = `<span>👨‍🍳 إرسال طلب الطاولة للمطبخ والكاشير</span><span>🖨️</span>`;
-      }
-    }
-  } else {
-    if (tableGroup) tableGroup.classList.add('hidden');
-    if (deliveryGroup) deliveryGroup.classList.remove('hidden');
-    if (submitBtn) {
-      if (!storeStatus.isOpen) {
-        submitBtn.innerHTML = `<span>📅 إرسال وتثبيت الطلب كحجز مسبق لليوم التالي</span><span>🚀</span>`;
-      } else {
-        submitBtn.innerHTML = `<span>🛵 إرسال طلب التوصيل والسفري للكاشير</span><span>⚡</span>`;
-      }
-    }
-  }
-}
-
-// -------------------------------------------------------------
-// تحديد موقع الزبون عبر GPS والخريطة
-// -------------------------------------------------------------
-function captureCustomerGPS() {
-  const btn = document.getElementById('gps-locate-btn');
-  const badge = document.getElementById('gps-status-badge');
-  const mapInput = document.getElementById('checkout-map-url');
-
-  if (!navigator.geolocation) {
-    alert("خاصية تحديد الموقع الجغرافي غير مدعومة في متصفحك. يرجى كتابة عنوانك في الحقل.");
-    return;
-  }
-
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<span>⏳ جاري تحديد موقعك بدقة عبر الأقمار الصناعية GPS...</span>`;
-  }
-
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-      
-      if (mapInput) mapInput.value = mapUrl;
-
-      if (badge) {
-        badge.textContent = "🎯 تم تحديد موقعك بالـ GPS";
-        badge.className = "text-[10px] text-emerald-400 font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30";
-      }
-
-      if (btn) {
-        btn.disabled = false;
-        btn.className = "w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center justify-center gap-2";
-        btn.innerHTML = `<span>✅ تم حفظ إحداثيات موقعك بنجاح</span>`;
-      }
-    },
-    (err) => {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `<span>📍 إعادة محاولة تحديد الموقع بالـ GPS</span>`;
-      }
-      alert("يرجى تفعيل أو السماح بصلاحية الموقع الجغرافي (Location Permission) في المتصفح لتحديد موقعك تلقائياً، أو كتابة عنوانك يدوياً.");
-    },
-    { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-  );
-}
-
-function showTakeawayPackageModal() {
-  const modal = document.getElementById('takeaway-package-modal');
-  if (modal) modal.classList.remove('hidden');
-}
-
-function closeTakeawayPackageModal() {
-  const modal = document.getElementById('takeaway-package-modal');
-  if (modal) modal.classList.add('hidden');
-}
-
-function showDineInLockedModal() {
-  const modal = document.getElementById('dinein-locked-modal');
-  if (modal) modal.classList.remove('hidden');
-}
-
-function closeDineInLockedModal() {
-  const modal = document.getElementById('dinein-locked-modal');
-  if (modal) modal.classList.add('hidden');
-}
-
-function populateTableOptions() {
-  const select = document.getElementById('checkout-table-select');
-  if (!select) return;
-
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  const tablesCount = config.tablesCount || 20;
-
-  let options = '<option value="">اختر رقم الطاولة...</option>';
-  for (let i = 1; i <= tablesCount; i++) {
-    const isSelected = selectedTableNumber === i ? 'selected' : '';
-    options += `<option value="${i}" ${isSelected}>طاولة رقم ${i}</option>`;
-  }
-  select.innerHTML = options;
-}
-
-// -------------------------------------------------------------
-// إرسال الطلب العام (صالة أو توصيل أونلاين للكاشير)
-// -------------------------------------------------------------
-function submitCustomerOrder() {
-  if (cart.length === 0) {
-    alert("السلة فارغة، يرجى إضافة أطباق أولاً!");
-    return;
-  }
-
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-
-  // 1. إذا كان نوع الطلب صالة
-  let finalTableNum = null;
-  if (currentOrderType === 'dine-in') {
-    if (!config.allowDineInOrders) {
-      showDineInLockedModal();
-      return;
-    }
-    const select = document.getElementById('checkout-table-select');
-    finalTableNum = selectedTableNumber;
-    if (select && select.value) {
-      finalTableNum = parseInt(select.value);
-    }
-    if (!finalTableNum) {
-      finalTableNum = 1;
-    }
-  }
-
-  // 2. إذا كان نوع الطلب استلام أو توصيل أونلاين
-  let customerName = '';
-  let customerPhone = '';
-  let customerAddress = '';
-  let mapUrl = '';
-
-  if (currentOrderType === 'takeaway' || currentOrderType === 'delivery') {
-    if (!config.takeawayPackageActive) {
-      showTakeawayPackageModal();
-      return;
-    }
-
-    customerName = document.getElementById('checkout-name')?.value?.trim() || '';
-    customerPhone = document.getElementById('checkout-phone')?.value?.trim() || '';
-    customerAddress = document.getElementById('checkout-address')?.value?.trim() || '';
-    mapUrl = document.getElementById('checkout-map-url')?.value?.trim() || '';
-
-    if (!customerPhone) {
-      alert("يرجى إدخال رقم الهاتف للتواصل وتأكيد طلب التوصيل!");
-      document.getElementById('checkout-phone')?.focus();
-      return;
-    }
-
-    // إذا لم يتم جلب GPS ولكن تمت كتابة العنوان، نصنع رابط بحث في خرائط جوجل
-    if (!mapUrl && customerAddress) {
-      mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}`;
-    }
-  }
-
-  const notes = document.getElementById('checkout-notes')?.value?.trim() || '';
-  const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const orderId = 'ORD-' + Math.floor(1000 + Math.random() * 9000);
-
-  // فحص أوقات وساعات العمل الرسمية
-  const storeStatus = (typeof checkRestaurantOpenStatus === 'function') 
-    ? checkRestaurantOpenStatus(config) 
-    : { isOpen: true };
-
-  const isClosedNow = !storeStatus.isOpen;
-  const preferredTime = document.getElementById('checkout-preorder-time')?.value || 'مع بداية افتتاح المطعم غداً';
-
-  // إذا كان المطعم مغلقاً وتم إلغاء خاصية الحجز المسبق
-  if (isClosedNow && config.allowPreorderNextDay === false) {
-    alert(`عذراً، المطعم مغلق حالياً خارج أوقات العمل الرسمية (${config.workingHours || storeStatus.workingHoursText}) ولا يستقبل طلبات جديدة في الوقت الراهن.`);
-    return;
-  }
-
-  let finalNotes = notes;
-  if (isClosedNow) {
-    finalNotes = `[📅 حجز مسبق لليوم التالي: ${preferredTime}]` + (notes ? ` - ${notes}` : '');
-  }
-
-  const newOrder = {
-    id: orderId,
-    type: currentOrderType === 'dine-in' ? 'dine-in' : 'delivery',
-    tableNumber: currentOrderType === 'dine-in' ? finalTableNum : null,
-    items: [...cart],
-    notes: finalNotes,
-    customerName: customerName,
-    customerPhone: customerPhone,
-    customerAddress: customerAddress,
-    mapUrl: mapUrl,
-    total: total,
-    currency: config.currency,
-    status: 'pending_cashier', // بانتظار موافقة الكاشير
-    source: 'online_menu',
-    isPreorder: isClosedNow,
-    preorderDate: isClosedNow ? 'غداً' : null,
-    preorderPreferredTime: isClosedNow ? preferredTime : null,
-    timestamp: Date.now()
-  };
-
-  // حفظ في قائمة الطلبات المركزية محلياً
-  const orders = getStoredData('orders', []);
-  orders.unshift(newOrder);
-  setStoredData('orders', orders);
-
-  // إرسال الطلب فورياً عبر سحابة Supabase (Realtime Broadcast + Database)
-  if (typeof sendOrderToSupabaseCloud === 'function') {
-    sendOrderToSupabaseCloud(newOrder);
-  }
-
-  // إفراغ السلة وتحديث الواجهة
-  cart = [];
-  setStoredData('cart', []);
-  updateCartUI();
-  renderMenuDishes();
-  closeCartDrawer();
-  updateKitchenBadge();
-
-  // عرض نافذة نجاح الطلب
-  showOrderSuccessModal(newOrder);
-}
-
-// -------------------------------------------------------------
-// إرسال الطلب السحابي الفوري للكاشير (Supabase Cloud Sync & Realtime)
-// -------------------------------------------------------------
-async function sendOrderToSupabaseCloud(order) {
-  if (!order || !order.id) return;
-  const client = (typeof getSupabase === 'function') ? getSupabase() : ((typeof getSupabaseClient === 'function') ? getSupabaseClient() : null);
-  // client check
-
-  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-  const totalVal = parseFloat(order.total) || 0;
-
-  // إزالة الصور والبيانات الثقيلة للحفاظ على السعة المجانية وضمان سرعة الشبكة
-  const cleanItems = (Array.isArray(order.items) ? order.items : []).map(i => ({
-    id: String(i.id || ''),
-    name: i.name || '',
-    price: Number(i.price) || 0,
-    quantity: Number(i.quantity || i.qty) || 1,
-    weight: i.weight !== undefined && i.weight !== null ? Number(i.weight) : null,
-    isWeighted: !!i.isWeighted,
-    pricePerKg: i.pricePerKg ? Number(i.pricePerKg) : null,
-    notes: i.notes || i.customerNote || ''
-  }));
-
-  const dbPayload = {
-    id: String(order.id),
-    restaurant_id: restId,
-    type: (order.type === 'takeaway' || order.type === 'delivery') ? order.type : 'dine-in',
-    table_number: order.tableNumber ? parseInt(order.tableNumber) : null,
-    customer_name: order.customerName || (order.tableNumber ? `طاولة ${order.tableNumber}` : 'زبون خارجي'),
-    customer_phone: order.customerPhone || '',
-    customer_address: order.customerAddress || '',
-    map_url: order.mapUrl || '',
-    items: cleanItems,
-    notes: order.notes || '',
-    total: totalVal,
-    currency: order.currency || 'د.ع',
-    status: 'pending_cashier',
-    source: 'customer',
-    created_at: new Date(order.timestamp || Date.now()).toISOString(),
-    updated_at: new Date(order.timestamp || Date.now()).toISOString()
-  };
-
-  let synced = false;
-
-  // 1. الإرسال عبر Supabase JS Client (الطبقة الأولى)
-  try {
-    const client = (typeof getSupabase === 'function') ? getSupabase() : ((typeof getSupabaseClient === 'function') ? getSupabaseClient() : null);
-    if (client) {
-      const { error } = await client.from('restaurant_orders').upsert([dbPayload]);
-      if (!error) {
-        synced = true;
-        console.log("✅ Customer order persisted to Supabase via SDK:", order.id);
-      } else {
-        console.warn("Supabase SDK order upsert notice:", error.message);
-      }
-    }
-  } catch (e) {
-    console.warn("Supabase SDK order dispatch error:", e);
-  }
-
-  // 2. الإرسال الاحتياطي المباشر عبر REST API (الطبقة الثانية المضمونة)
-  if (!synced) {
-    try {
-      const sbUrl = (typeof getActiveSupabaseUrl === 'function') ? getActiveSupabaseUrl() : DEFAULT_SUPABASE_URL;
-      const sbKey = (typeof getActiveSupabaseAnonKey === 'function') ? getActiveSupabaseAnonKey() : DEFAULT_SUPABASE_ANON_KEY;
-      const resp = await fetch(`${sbUrl}/rest/v1/restaurant_orders`, {
-        method: 'POST',
-        headers: {
-          'apikey': sbKey,
-          'Authorization': `Bearer ${sbKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(dbPayload)
-      });
-      if (resp.ok) {
-        synced = true;
-        console.log("✅ Customer order persisted to Supabase via direct REST fallback:", order.id);
-      } else {
-        const errTxt = await resp.text();
-        console.warn("Direct REST fallback notice:", resp.status, errTxt);
-      }
-    } catch (restErr) {
-      console.warn("Direct REST fallback exception:", restErr);
-    }
-  }
-
-  // 3. بث فوري عبر قنوات Realtime WebSocket لإشعار الكاشير فورياً بالرنين
-  try {
-    const client = (typeof getSupabase === 'function') ? getSupabase() : ((typeof getSupabaseClient === 'function') ? getSupabaseClient() : null);
-    if (client) {
-      // بث عبر قناة المطعم
-      const ch1 = client.channel(`orders_channel_${restId}`);
-      ch1.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          ch1.send({
-            type: 'broadcast',
-            event: 'new_customer_order',
-            payload: dbPayload
-          });
-        }
-      });
-
-      // بث إضافي عبر قناة الكاشير العامة
-      const ch2 = client.channel('cashier-live-orders');
-      ch2.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          ch2.send({
-            type: 'broadcast',
-            event: 'new_customer_order',
-            payload: dbPayload
-          });
-        }
-      });
-    }
-  } catch (bcErr) {
-    console.warn("Realtime broadcast error:", bcErr);
-  }
-
-  // 4. استماع الزبون لمتابعة حالة طلبه مباشرة (في المطبخ / جاهز للتقديم)
-  listenToMyOrderStatus(order.id);
-}
-
-// دالة تتبع الزبون لحالة طلبه اللحظية
-function listenToMyOrderStatus(orderId) {
-  try {
-    const client = (typeof getSupabase === 'function') ? getSupabase() : ((typeof getSupabaseClient === 'function') ? getSupabaseClient() : null);
-    if (!client) return;
-
-    client
-      .channel(`order-track-${orderId}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'restaurant_orders',
-        filter: `id=eq.${orderId}`
-      }, (payload) => {
-        const nextStatus = payload.new ? payload.new.status : null;
-        if (nextStatus) {
-          renderCustomerOrderStatusUpdate(nextStatus);
-        }
-      })
-      .subscribe();
-  } catch (e) {
-    console.warn("Order tracking subscribe error:", e);
-  }
-}
-
-function renderCustomerOrderStatusUpdate(status) {
-  const badge = document.getElementById('success-order-status-badge');
-  const title = document.getElementById('success-modal-title');
-  const subtitle = document.getElementById('success-modal-subtitle');
-
-  if (status === 'in_kitchen' || status === 'in-kitchen' || status === 'preparing') {
-    if (badge) {
-      badge.textContent = '👨‍🍳 جاري التحضير في المطبخ الآن';
-      badge.className = 'px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-xs font-black animate-pulse';
-    }
-    if (title) title.textContent = 'طلبكم قيد التجهيز في المطبخ! 🔥';
-  } else if (status === 'served' || status === 'ready') {
-    if (badge) {
-      badge.textContent = '🍽️ الوجبة جاهزة وتُقدم لطاولتكم';
-      badge.className = 'px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full text-xs font-black';
-    }
-    if (title) title.textContent = 'الوجبة جاهزة! بالهناء والشفاء ✨';
-  } else if (status === 'completed' || status === 'paid') {
-    if (badge) {
-      badge.textContent = '✅ تم دفع الحساب وإنهاء الجلسة';
-      badge.className = 'px-3 py-1 bg-blue-500/20 text-blue-300 border border-blue-500/40 rounded-full text-xs font-black';
-    }
-  }
-}
-
-// دالة مساعدة للتوافق
-function submitDineInOrder() {
-  submitCustomerOrder();
-}
-
-function showOrderSuccessModal(order) {
-  const modal = document.getElementById('order-success-modal');
-  const iconEl = document.getElementById('success-modal-icon');
-  const titleEl = document.getElementById('success-modal-title');
-  const subtitleEl = document.getElementById('success-modal-subtitle');
-  const detailsEl = document.getElementById('success-order-details');
-  const contactBox = document.getElementById('success-contact-box');
-  const contactLabel = document.getElementById('success-contact-label');
-  const phoneText = document.getElementById('order-success-restaurant-phone-text');
-  const phoneBtn = document.getElementById('order-success-restaurant-phone-btn');
-  if (!modal) return;
-
-  const config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-  const isDineIn = order.type === 'dine-in';
-  const restPhone = config.phone || '+9647700000000';
-
-  // 1. رسائل الترحيب والأيقونة المخصصة
-  if (order.isPreorder) {
-    if (iconEl) iconEl.textContent = '📅';
-    if (titleEl) titleEl.textContent = `تم تسجيل حجزكم المسبق لليوم التالي بنجاح! ✨`;
-    if (subtitleEl) subtitleEl.textContent = `المطعم مغلق حالياً خارج أوقات العمل الرسمية. تم إرسال حجزكم لإدارة المطعم وسيتم البدء بتجهيزه فور افتتاح المطعم غداً (${order.preorderPreferredTime || 'مع بداية الافتتاح'}) إن شاء الله! 👨‍🍳`;
-  } else if (isDineIn) {
-    if (iconEl) iconEl.textContent = '🍽️';
-    if (titleEl) titleEl.textContent = `أهلاً وسهلاً بكم في ${config.name}! 🍽️`;
-    if (subtitleEl) subtitleEl.textContent = `تم إرسال طلبكم لطاولة رقم [ ${order.tableNumber} ] بنجاح إلى المطبخ، شيف المطعم يجهّز وجبتكم الساخنة الآن بكل حب! بالصحة والعافية ✨`;
-  } else {
-    if (iconEl) iconEl.textContent = '🛵';
-    if (titleEl) titleEl.textContent = `شكراً لطلبكم من ${config.name}! 🛵`;
-    if (subtitleEl) subtitleEl.textContent = `تم استلام طلبكم بنجاح وجاري تحضيره في المطبخ لتسليمه ساخناً وطازجاً في أسرع وقت ✨`;
-  }
-
-  // 2. تفاصيل الفاتورة
-  if (detailsEl) {
-    detailsEl.innerHTML = `
-      <div class="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 text-right text-xs space-y-2 mb-1">
-        ${order.isPreorder ? `
-          <div class="bg-gradient-to-r from-purple-900/60 to-amber-900/40 p-2.5 rounded-xl border border-amber-500/40 text-amber-200 font-bold text-center mb-1">
-            <span>📅 موعد تجهيز الحجز:</span>
-            <span class="text-white font-black">غداً (${order.preorderPreferredTime || 'مع بداية الافتتاح'}) ✨</span>
-          </div>
-        ` : ''}
-        <div class="flex justify-between items-center pb-1.5 border-b border-slate-700">
-          <span class="text-slate-400">رقم الفاتورة:</span>
-          <span class="font-mono font-black text-rose-400 text-sm">#${order.id}</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-slate-400">نوع الطلب:</span>
-          <span class="font-bold text-white">${isDineIn ? `🍽️ داخل الصالة (طاولة رقم ${order.tableNumber})` : '🛵 طلب توصيل وسفري أونلاين'}</span>
-        </div>
-        ${order.customerPhone ? `
-          <div class="flex justify-between items-center">
-            <span class="text-slate-400">هاتف الزبون:</span>
-            <span class="font-mono text-slate-200">${order.customerPhone}</span>
-          </div>
-        ` : ''}
-        ${order.customerAddress ? `
-          <div class="text-[11px] text-slate-300">
-            <span class="text-slate-400">عنوان التوصيل:</span> ${order.customerAddress}
-          </div>
-        ` : ''}
-        <div class="flex justify-between items-center pt-2 border-t border-slate-700">
-          <span class="text-slate-300 font-bold">المجموع الكلي:</span>
-          <span class="font-black text-rose-400 text-sm">${order.total.toLocaleString()} ${order.currency}</span>
-        </div>
-      </div>
-    `;
-  }
-
-  // 3. صندوق التوجيه / رقم هاتف المطعم (معتمد حصراً من إعدادات المطعم وليس رقم المبرمج)
-  if (isDineIn) {
-    if (contactLabel) contactLabel.textContent = "✨ كابتن الصالة في خدمتكم دائماً لأي طلب إضافي أو مساعدة.";
-    if (phoneText) phoneText.textContent = `طاولة رقم [ ${order.tableNumber} ] - نتشرف بزيارتكم`;
-    if (phoneBtn) phoneBtn.classList.add('hidden');
-  } else {
-    if (contactLabel) contactLabel.textContent = `لأي استفسار أو متابعة مع إدارة ${config.name}:`;
-    if (phoneText) phoneText.textContent = restPhone;
-    if (phoneBtn) {
-      phoneBtn.classList.remove('hidden');
-      phoneBtn.href = `tel:${restPhone.replace(/\s+/g, '')}`;
-      phoneBtn.innerHTML = `<span>📞 الاتصال المباشر بالمطعم (${restPhone})</span>`;
-    }
-  }
-
+  `;
   modal.classList.remove('hidden');
 }
 
-function closeSuccessModal() {
-  document.getElementById('order-success-modal').classList.add('hidden');
-}
-
-// -------------------------------------------------------------
-// تنبيه قفل خيار الواتساب المباشر مؤقتاً (Meta WhatsApp Cloud API Requirement)
-// -------------------------------------------------------------
-function triggerWhatsAppLockedAlert() {
-  const modal = document.getElementById('whatsapp-locked-modal');
-  if (modal) modal.classList.remove('hidden');
-}
-
-function closeWhatsAppLockedModal() {
-  const modal = document.getElementById('whatsapp-locked-modal');
+function closeDishDetailsModal() {
+  const modal = document.getElementById('dish-details-modal');
   if (modal) modal.classList.add('hidden');
 }
 
 // -------------------------------------------------------------
-// نافذة نبذة عن مكتب emattec
+// محرك المزامنة السحابية الحية لكابتن الصالة (Supabase Realtime)
 // -------------------------------------------------------------
-function openAboutEmattecModal() {
-  const modal = document.getElementById('about-emattec-modal');
-  if (modal) {
-    modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-  }
-}
+let captainCloudOrdersChannel = null;
 
-function closeAboutEmattecModal() {
-  const modal = document.getElementById('about-emattec-modal');
-  if (modal) {
-    modal.classList.add('hidden');
-    document.body.style.overflow = 'auto';
-  }
-}
+async function sendCaptainOrderToSupabase(order) {
+  const client = (typeof getSupabase === 'function') ? getSupabase() : ((typeof getSupabaseClient === 'function') ? getSupabaseClient() : null);
+  if (!client || !order || !order.id) return;
 
-function openUnifiedLoginModal() {
-  window.location.href = 'login.html';
-}
+  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
 
-function closeUnifiedLoginModal() {
-  const modal = document.getElementById('unified-login-modal');
-  if (modal) modal.classList.add('hidden');
-}
-
-async function handleModalUnifiedLogin() {
-  const userIn = document.getElementById('modal-login-username');
-  const pinIn = document.getElementById('modal-login-pin');
-  const errEl = document.getElementById('modal-login-error');
-  const btn = document.getElementById('modal-login-btn');
-
-  const username = userIn ? userIn.value.trim() : '';
-  const pin = pinIn ? pinIn.value : '';
-
-  if (!username) {
-    if (errEl) {
-      errEl.textContent = 'يرجى إدخال اسم المستخدم!';
-      errEl.classList.remove('hidden');
-    }
-    return;
-  }
-
-  if (btn) btn.textContent = 'جاري التحقق... ⏳';
-
-  const res = typeof loginUserAsync === 'function' 
-    ? await loginUserAsync(username, pin) 
-    : { success: false, message: 'خطأ في المصادقة' };
-
-  if (btn) btn.textContent = 'تسجيل الدخول 🚀';
-
-  if (res.success) {
-    if (errEl) errEl.classList.add('hidden');
-    closeUnifiedLoginModal();
-    const targetRest = res.restaurantId || (typeof getActiveRestaurantId === 'function' ? getActiveRestaurantId() : 'fahma_dokhan');
-    const restParam = targetRest ? `?rest=${encodeURIComponent(targetRest)}` : '';
-
-    if (res.role === 'super_admin' || res.role === 'assistant_super_admin') {
-      window.location.href = 'super-admin.html';
-    } else if (res.role === 'admin') {
-      window.location.href = 'admin.html' + restParam;
-    } else if (res.role === 'cashier') {
-      window.location.href = 'cashier.html' + restParam;
-    } else if (res.role === 'captain') {
-      window.location.href = 'captain.html' + restParam;
-    } else {
-      window.location.href = 'index.html' + restParam;
-    }
-  } else {
-    if (errEl) {
-      errEl.textContent = res.message || 'اسم المستخدم أو كلمة المرور غير صحيحة!';
-      errEl.classList.remove('hidden');
-    }
-    if (pinIn) {
-      pinIn.value = '';
-      pinIn.focus();
-    }
-  }
-}
-
-function openProtectedAdminView() {
-  openUnifiedLoginModal();
-}
-
-function closeAdminPinModal() {
-  closeUnifiedLoginModal();
-}
-
-function verifyAdminPin() {
-  handleModalUnifiedLogin();
-}
-
-function lockAdminSession() {
-  if (typeof logoutSession === 'function') {
-    logoutSession('index.html');
-  }
-}
-
-try {
-  window.addEventListener('DOMContentLoaded', () => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      if (p.has('login') || p.has('openLogin') || p.has('superadmin') || p.has('auth')) {
-        setTimeout(openUnifiedLoginModal, 350);
-      }
-    } catch(e) {}
-  });
-} catch(e) {}
-
-
-// -------------------------------------------------------------
-// التبديل بين واجهات التطبيق (Menu / Admin / QR / Landing)
-// -------------------------------------------------------------
-function switchView(viewName) {
-  if (viewName === 'admin' && !isAdminAuthenticated) {
-    openProtectedAdminView();
-    return;
-  }
-
-  const views = ['menu-view', 'admin-view', 'qr-view', 'landing-view'];
-  views.forEach(v => {
-    const el = document.getElementById(v);
-    if (el) el.classList.add('hidden');
-  });
-
-  const target = document.getElementById(`${viewName}-view`);
-  if (target) target.classList.remove('hidden');
-
-  // تحديث أشرطة التبويب
-  document.querySelectorAll('.nav-tab-btn').forEach(btn => {
-    btn.classList.remove('text-rose-400', 'font-black');
-    btn.classList.add('text-slate-400');
-  });
-  const activeBtn = document.getElementById(`nav-btn-${viewName}`);
-  if (activeBtn) {
-    activeBtn.classList.remove('text-slate-400');
-    activeBtn.classList.add('text-rose-400', 'font-black');
-  }
-
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-
-  if (viewName === 'admin') {
-    initAdmin();
-  }
-}
-
-function updateKitchenBadge() {
-  const orders = getStoredData('orders', []);
-  const newOrders = orders.filter(o => o.status === 'new').length;
-  const badge = document.getElementById('admin-badge-count');
-  if (badge) {
-    if (newOrders > 0) {
-      badge.textContent = newOrders;
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
-  }
-}
-
-// -------------------------------------------------------------
-// مزامنة إعدادات وحالة تفعيل باقة المطعم من Supabase لحظياً
-// -------------------------------------------------------------
-async function syncRestaurantConfigFromSupabase() {
-  const client = typeof getSupabase === 'function' ? getSupabase() : null;
-  const restId = typeof getActiveRestaurantId === 'function' ? getActiveRestaurantId() : DEFAULT_RESTAURANT_ID;
-  if (!client) return;
+  const dbPayload = {
+    id: order.id,
+    restaurant_id: restId,
+    type: order.type || 'dine-in',
+    table_number: order.tableNumber ? parseInt(order.tableNumber) : null,
+    customer_name: order.captainName || 'كابتن الصالة',
+    customer_phone: '',
+    customer_address: '',
+    map_url: '',
+    items: Array.isArray(order.items) ? order.items : [],
+    notes: order.notes || '',
+    total: parseFloat(order.total) || 0,
+    currency: order.currency || 'د.ع',
+    status: (order.status === 'new' || !order.status) ? 'pending_kitchen' : order.status,
+    source: 'captain',
+    created_at: new Date(order.timestamp || Date.now()).toISOString(),
+    updated_at: new Date().toISOString()
+  };
 
   try {
-    const { data, error } = await client.from('restaurants').select('*').eq('id', restId).single();
-    if (data && !error) {
-      let config = getStoredData('config', DEFAULT_RESTAURANT_CONFIG);
-
-      // قراءة وتحديث اسم ووصف المطعم مباشرة من Supabase
-      if (data.name) config.name = data.name;
-      if (data.name_en) config.nameEn = data.name_en;
-      if (data.tagline) config.tagline = data.tagline;
-      if (data.tagline_en) config.taglineEn = data.tagline_en;
-
-      // نقل وتحديث كافة بيانات المطعم من Supabase
-      if (data.phone) config.phone = data.phone;
-      if (data.phone2 !== undefined) config.phone2 = data.phone2 || '';
-      
-      // الواتساب ورابطه الحي
-      if (data.whatsapp_url) config.whatsappUrl = data.whatsapp_url;
-      if (data.whatsapp_number) config.whatsappNumber = data.whatsapp_number;
-      if (!config.whatsappUrl && (data.whatsapp_number || data.phone)) {
-        const rawWa = (data.whatsapp_number || data.phone || '').replace(/\D/g, '').replace(/^0+/, '');
-        config.whatsappUrl = `https://wa.me/${rawWa.startsWith('964') ? rawWa : '964' + rawWa}`;
-      }
-
-      // العنوان وموقع خرائط Google Maps
-      if (data.address) config.address = data.address;
-      if (data.maps_url || data.map_url) config.mapUrl = data.maps_url || data.map_url;
-
-      // أوقات الدوام والعطل والواي فاي
-      if (data.working_hours) config.workingHours = data.working_hours;
-      if (data.open_time) config.openTime = data.open_time;
-      if (data.close_time) config.closeTime = data.close_time;
-      if (data.holidays) config.holidays = data.holidays;
-      if (data.wifi_name) config.wifiName = data.wifi_name;
-      if (data.wifi_pass) config.wifiPass = data.wifi_pass;
-
-      // العملة وعدد الطاولات وحجم الورق
-      if (data.currency) config.currency = data.currency;
-      if (data.currency_en) config.currencyEn = data.currency_en;
-      if (data.tables_count) config.tablesCount = Number(data.tables_count);
-      if (data.printer_paper_size) config.printerPaperSize = data.printer_paper_size;
-      if (data.published_url) config.publishedUrl = data.published_url;
-
-      // شعار وهوية المطعم من Supabase حصراً
-      if (data.logo !== undefined && data.logo !== null && data.logo.trim() !== '') {
-        config.logo = data.logo.trim();
-      } else {
-        config.logo = 'logo.svg';
-      }
-
-      // صلاحيات وباقات الطلبات
-      config.allowDineInOrders = (data.allow_dinein_orders === true);
-      config.allowTakeawayOrders = (data.allow_takeaway_orders === true);
-      config.takeawayPackageActive = (data.takeaway_package_active === true);
-      config.planType = data.subscription_plan || data.plan_type || 'pro';
-      config.isActive = (data.is_active !== false);
-
-      setStoredData('config', config);
-      updateAppBranding();
-      renderMenuDishes();
-      updateCartUI();
-      if (typeof populateTableOptions === 'function') populateTableOptions();
+    const { error } = await client.from('restaurant_orders').upsert([dbPayload]);
+    if (error) {
+      console.warn("Supabase captain order upsert notice:", error.message);
+    } else {
+      console.log("✅ Captain order synced to Supabase successfully:", order.id);
     }
   } catch (err) {
-    console.warn("Supabase config sync error:", err);
+    console.warn("Supabase upsert error:", err);
   }
 
-  // اشتراك Realtime لحظي لتلقي أي تحديث يحدث في هذا المطعم حصراً
-  const syncSubKey = '_restaurantRealtimeSyncSubscribed_' + restId;
-  if (client && !window[syncSubKey]) {
-    window[syncSubKey] = true;
-    try {
-      client.channel(`public:restaurants_sync_${restId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants', filter: `id=eq.${restId}` }, (payload) => {
-          console.log("Supabase restaurant updated in realtime:", payload);
-          syncRestaurantConfigFromSupabase();
-        })
-        .subscribe();
-    } catch (e) {
-      console.warn("Supabase Realtime subscription error:", e);
-    }
+  // بث التحديث عبر قناة Realtime ليصل للكاشير فوراً
+  try {
+    const channelName = `orders_channel_${restId}`;
+    const ch = client.channel(channelName);
+    ch.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        ch.send({
+          type: 'broadcast',
+          event: 'table_order_update',
+          payload: order
+        });
+      }
+    });
+  } catch (e) {}
+}
 
-    // إعادة المزامنة تلقائياً عند عودة التركيز للمتصفح
-    window.addEventListener('focus', () => {
-      syncRestaurantConfigFromSupabase();
-      syncMenuFromSupabase();
+function addCaptainOrderTombstone(orderId) {
+  if (!orderId) return;
+  try {
+    const raw = localStorage.getItem('smart_emenu_tombstones') || '[]';
+    const list = JSON.parse(raw);
+    const sid = String(orderId).trim();
+    if (!list.includes(sid)) {
+      list.push(sid);
+      if (list.length > 500) list.shift();
+      localStorage.setItem('smart_emenu_tombstones', JSON.stringify(list));
+    }
+  } catch (e) {}
+}
+
+function isCaptainOrderTombstoned(orderId) {
+  if (!orderId) return false;
+  try {
+    const raw = localStorage.getItem('smart_emenu_tombstones') || '[]';
+    const list = JSON.parse(raw);
+    return list.includes(String(orderId).trim());
+  } catch (e) {
+    return false;
+  }
+}
+
+async function deleteCaptainOrderFromSupabase(orderId) {
+  if (!orderId) return;
+  const cleanId = String(orderId).trim();
+  addCaptainOrderTombstone(cleanId);
+  const client = (typeof getSupabase === 'function') ? getSupabase() : ((typeof getSupabaseClient === 'function') ? getSupabaseClient() : null);
+  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
+
+  // 1. حذف مباشر عبر Supabase JS Client
+  if (client) {
+    try {
+      const { error } = await client.from('restaurant_orders').delete().eq('id', cleanId);
+      if (!error) {
+        console.log("Deleted order from Supabase restaurant_orders successfully:", cleanId);
+      } else {
+        console.warn("Supabase client delete notice:", error.message);
+      }
+    } catch (e) {
+      console.warn("Supabase delete error:", e);
+    }
+  }
+
+  // 2. حذف احتياطي حتمي ومباشر عبر HTTP REST API لضمان المسح التام 100%
+  try {
+    const sbUrl = (typeof getActiveSupabaseUrl === 'function') ? getActiveSupabaseUrl() : DEFAULT_SUPABASE_URL;
+    const sbKey = (typeof getActiveSupabaseAnonKey === 'function') ? getActiveSupabaseAnonKey() : DEFAULT_SUPABASE_ANON_KEY;
+    await fetch(`${sbUrl}/rest/v1/restaurant_orders?id=eq.${encodeURIComponent(cleanId)}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': sbKey,
+        'Authorization': `Bearer ${sbKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    console.log("Direct REST DELETE executed successfully for order (captain):", cleanId);
+  } catch (fetchErr) {
+    console.warn("Direct REST delete error (captain):", fetchErr);
+  }
+
+  // 3. بث إشعار الحذف عبر Realtime لتفريغ الطاولة لدى الجميع فوراً
+  if (client) {
+    try {
+      const channelName = `orders_channel_${restId}`;
+      const ch = client.channel(channelName);
+      ch.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          ch.send({
+            type: 'broadcast',
+            event: 'order_deleted',
+            payload: { orderId: cleanId }
+          });
+        }
+      });
+    } catch (e) {}
+  }
+}
+
+function initCaptainCloudOrdersListener() {
+  const client = (typeof getSupabase === 'function') ? getSupabase() : ((typeof getSupabaseClient === 'function') ? getSupabaseClient() : null);
+  if (!client) return;
+
+  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
+
+  try {
+    const channelName = `orders_channel_${restId}`;
+    captainCloudOrdersChannel = client.channel(channelName);
+    captainCloudOrdersChannel
+      .on('broadcast', { event: 'new_customer_order' }, ({ payload }) => {
+        syncCaptainOrdersFromSupabase();
+      })
+      .on('broadcast', { event: 'table_order_update' }, ({ payload }) => {
+        syncCaptainOrdersFromSupabase();
+      })
+      .on('broadcast', { event: 'order_deleted' }, ({ payload }) => {
+        syncCaptainOrdersFromSupabase();
+      })
+      .on('broadcast', { event: 'call_waiter' }, ({ payload }) => {
+        console.log("🛎️ Captain received Call Waiter event:", payload);
+        handleCaptainTableServiceAlert('call_waiter', payload);
+      })
+      .on('broadcast', { event: 'request_bill' }, ({ payload }) => {
+        console.log("💳 Captain received Request Bill event:", payload);
+        handleCaptainTableServiceAlert('request_bill', payload);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_orders', filter: `restaurant_id=eq.${restId}` }, (payload) => {
+        syncCaptainOrdersFromSupabase();
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log("✅ Captain subscribed to Supabase Realtime orders channel:", channelName);
+        }
+      });
+  } catch (err) {
+    console.warn("Realtime listener init error:", err);
+  }
+
+  // مزامنة أولية
+  syncCaptainOrdersFromSupabase();
+}
+
+async function syncCaptainOrdersFromSupabase() {
+  const client = (typeof getSupabase === 'function') ? getSupabase() : ((typeof getSupabaseClient === 'function') ? getSupabaseClient() : null);
+  if (!client) return;
+
+  const restId = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
+
+  try {
+    const { data, error } = await client
+      .from('restaurant_orders')
+      .select('*')
+      .eq('restaurant_id', restId)
+      .neq('status', 'completed')
+      .neq('status', 'cancelled')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error || !data) return;
+
+    let localOrders = getStoredData('orders', []);
+    let modified = false;
+
+    const cloudOrderIds = new Set(data.map(d => d.id));
+
+    data.forEach(remote => {
+      if (isCaptainOrderTombstoned(remote.id)) return;
+
+      const idx = localOrders.findIndex(o => o.id === remote.id);
+      const mapped = {
+        id: remote.id,
+        restaurant_id: remote.restaurant_id || restId,
+        type: remote.type || 'dine-in',
+        tableNumber: remote.table_number ? parseInt(remote.table_number) : null,
+        items: Array.isArray(remote.items) ? remote.items : [],
+        notes: remote.notes || '',
+        customerName: remote.customer_name || '',
+        customerPhone: remote.customer_phone || '',
+        customerAddress: remote.customer_address || '',
+        mapUrl: remote.map_url || '',
+        total: parseFloat(remote.total || remote.total_amount) || 0,
+        currency: remote.currency || 'د.ع',
+        status: (remote.status === 'new' || !remote.status) ? 'pending_kitchen' : remote.status,
+        source: remote.source || 'online_menu',
+        timestamp: remote.created_at ? new Date(remote.created_at).getTime() : Date.now()
+      };
+
+      if (idx === -1) {
+        const isClosed = mapped.status === 'completed' || mapped.status === 'cancelled';
+        const now = Date.now();
+        const oTime = new Date(mapped.timestamp || 0).getTime();
+        const isOld = oTime && (now - oTime) > 24 * 60 * 60 * 1000;
+        if (!isClosed && !isOld) {
+          localOrders.push(mapped);
+          modified = true;
+        }
+      } else {
+        const local = localOrders[idx];
+        if (local && (local.status === 'completed' || local.status === 'cancelled')) {
+          return;
+        }
+        const itemsDiff = JSON.stringify(local.items) !== JSON.stringify(mapped.items);
+        const statusDiff = local.status !== mapped.status;
+        const totalDiff = local.total !== mapped.total;
+        const notesDiff = local.notes !== mapped.notes;
+        const tableDiff = local.tableNumber !== mapped.tableNumber;
+
+        if (itemsDiff || statusDiff || totalDiff || notesDiff || tableDiff) {
+          localOrders[idx] = { ...local, ...mapped };
+          modified = true;
+        }
+      }
     });
 
-    // مزامنة دورية تلقائية كل 4 ثوانٍ لضمان التحديث الحي حتى لو كان اشتراك Realtime غير مفعل بالجدول
-    setInterval(() => {
-      syncRestaurantConfigFromSupabase();
-    }, 4000);
+    // عزل وتصفية الطلبات: تنظيف أي طلبات تخص مطعماً آخر أو محذوفة
+    localOrders = localOrders.filter(o => (!o.restaurant_id || o.restaurant_id === restId) && !isCaptainOrderTombstoned(o.id));
+
+    if (modified) {
+      localOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setStoredData('orders', localOrders);
+      renderTablesGrid();
+      renderCaptainActiveOrders();
+    }
+  } catch (e) {
+    console.warn("Captain syncOrdersFromSupabase error:", e);
   }
 }
 
 // -------------------------------------------------------------
-// مزامنة أطباق وأقسام المنيو لحظياً مع سحابة Supabase
+// مزامنة أطباق وأقسام المنيو لحظياً مع سحابة Supabase للكابتن
 // -------------------------------------------------------------
 async function syncMenuFromSupabase() {
   const client = typeof getSupabase === 'function' ? getSupabase() : null;
@@ -6380,29 +5144,19 @@ async function syncMenuFromSupabase() {
       .order('created_at', { ascending: true });
 
     if (!dishErr && dishData && dishData.length > 0) {
-      // خريطة لحفظ isWeighted/unitPrice لاصناف السمك عند المزامنة من Supabase
-      const _wMap = {};
-      if (typeof DEFAULT_DISHES !== 'undefined') {
-        DEFAULT_DISHES.filter(function(d){ return d.isWeighted; }).forEach(function(d){ _wMap[String(d.id)] = d; });
-      }
       const dishes = dishData.map(d => {
         const dishId = isNaN(d.id) ? d.id : Number(d.id);
         const resolvedOldPrice = (d.old_price !== undefined && d.old_price !== null && Number(d.old_price) > 0) ? Number(d.old_price) : null;
-        const _def = _wMap[String(d.id)] || {};
-        const isWeighted = !!(_def.isWeighted || d.category_id === 'fish');
-        const price = Number(d.price) || 0;
         return {
           id: dishId,
           name: d.name,
           nameEn: d.name_en || '',
           categoryId: d.category_id,
-          price: price,
+          price: Number(d.price) || 0,
           oldPrice: resolvedOldPrice,
-          unitPrice: isWeighted ? price : undefined,
-          isWeighted: isWeighted || undefined,
           ingredients: d.ingredients || d.description || '',
           description: d.description || d.ingredients || '',
-          calories: d.calories ? (d.calories + ' سعرة') : '',
+          calories: d.calories ? `${d.calories} سعرة` : '',
           prepTime: d.prep_time || 15,
           available: d.is_available !== false,
           isPopular: !!d.is_featured,
@@ -6413,17 +5167,17 @@ async function syncMenuFromSupabase() {
 
       setStoredData('dishes', dishes);
 
-      // اعادة رسم المنيو في الشاشة فورا
-      if (typeof renderCategories === 'function') renderCategories();
-      if (typeof renderMenuDishes === 'function') renderMenuDishes();
+      // إعادة رسم المنيو في الشاشة فوراً
+      if (typeof renderCaptainCategories === 'function') renderCaptainCategories();
+      if (typeof renderCaptainDishes === 'function') renderCaptainDishes();
     }
   } catch (err) {
-    console.warn("Supabase menu sync error:", err);
+    console.warn("Supabase captain menu sync error:", err);
   }
 
-  // اشتراك Realtime لحظي لأي تغيير في أطباق أو تصنيفات المنيو
-  if (client && !window._menuRealtimeSubscribed) {
-    window._menuRealtimeSubscribed = true;
+  // اشتراك Realtime لحظي للكابتن
+  if (client && !window._captainMenuRealtimeSubscribed) {
+    window._captainMenuRealtimeSubscribed = true;
     try {
       let debounceTimer = null;
       const triggerRealtimeSync = () => {
@@ -6433,15 +5187,17 @@ async function syncMenuFromSupabase() {
         }, 500);
       };
 
-      client.channel(`public:menu_realtime_${restId}`)
+      client.channel(`public:captain_menu_realtime_${restId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_dishes', filter: `restaurant_id=eq.${restId}` }, triggerRealtimeSync)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_categories', filter: `restaurant_id=eq.${restId}` }, triggerRealtimeSync)
         .subscribe();
     } catch (e) {
-      console.warn("Supabase menu realtime error:", e);
+      console.warn("Captain menu realtime error:", e);
     }
   }
 }
+
+
 
 /* AUTO_MIGRATED_FISH_DATA_V1 */
 (function migrateFishData() {
@@ -6464,195 +5220,15 @@ async function syncMenuFromSupabase() {
   } catch(e) {}
 })();
 
-
-// ترقية قسم الأسماك إلى صنف الكيلو الموحد بالوزن الفعلي
-(function migrateToSingleWeightedFish() {
-  try {
-    let dishes = JSON.parse(localStorage.getItem('smart_emenu_dishes') || '[]');
-    let changed = false;
-    if (Array.isArray(dishes) && dishes.length > 0) {
-      const hasOldFish = dishes.some(d => String(d.id).startsWith('fd_8') || (Number(d.id) >= 801 && Number(d.id) <= 836));
-      if (hasOldFish) {
-        dishes = dishes.filter(d => !String(d.id).startsWith('fd_8') && !(Number(d.id) >= 801 && Number(d.id) <= 836));
-        changed = true;
-      }
-      if (!dishes.some(d => d.id === 'fd_fish_masgouf')) {
-        dishes.push({
-          id: 'fd_fish_masgouf',
-          categoryId: 'fish',
-          name: 'سمك مسكوف عراقي بالوزن (سعر الكيلو)',
-          nameEn: 'Iraqi Masgouf Fish (Per KG)',
-          price: 10000,
-          unitPrice: 10000,
-          isWeighted: true,
-          defaultWeight: 2.0,
-          unit: 'كغم',
-          description: 'سمك كارب عراقي حي طازج يوزن ويشوى على الحطب، يحسب السعر وفق الوزن الفعلي للسمكة (10,000 د.ع لكل كغم) ويقدم مع الخبز الحار والطرشي والليمون والعمبة وسيرفيس الخضار.',
-          image: 'https://images.unsplash.com/photo-1534939561126-855b8675edd7?auto=format&fit=crop&w=600&q=80',
-          available: true,
-          is_available: true,
-          isPopular: true
-        });
-        changed = true;
-      }
-      if (changed) {
-        localStorage.setItem('smart_emenu_dishes', JSON.stringify(dishes));
-      }
-    }
-  } catch(e) {}
-})();
-
-// =============================================================
-// ميزات خدمة الطاولة: نداء الكابتن 🛎️ وطلب الفاتورة 💳
-// =============================================================
-let _waiterCallCooldown = false;
-let _billRequestCooldown = false;
-
-function playCustomerBeep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.4);
-  } catch(e) {}
+/* =========================================================
+ * تعديل عدد الأفراد / الضيوف على الطاولة للكابتن
+ * ========================================================= */
+function adjustCaptainGuests(delta) {
+  const el = document.getElementById('captain-guests-count');
+  if (!el) return;
+  let count = parseInt(el.textContent, 10) || 1;
+  count = Math.max(1, Math.min(50, count + delta));
+  el.textContent = count;
 }
+window.adjustCaptainGuests = adjustCaptainGuests;
 
-window.triggerCallWaiter = async function() {
-  if (_waiterCallCooldown) {
-    alert("⏳ لقد قمت بإرسال نداء مؤخراً! الكابتن في طريقه إليكم الآن.");
-    return;
-  }
-
-  let tableNum = selectedTableNumber;
-  if (!tableNum || isNaN(tableNum) || tableNum <= 0) {
-    const input = prompt("يرجى إدخال رقم طاولتك لإرسال نداء إلى كابتن الصالة:");
-    if (!input) return;
-    tableNum = parseInt(input);
-    if (isNaN(tableNum) || tableNum <= 0) {
-      alert("رقم الطاولة غير صحيح!");
-      return;
-    }
-    selectedTableNumber = tableNum;
-    sessionStorage.setItem('customer_table_number', tableNum);
-    const quickBar = document.getElementById('quick-table-service-bar');
-    const quickIndicator = document.getElementById('quick-table-indicator');
-    if (quickBar) { quickBar.classList.remove('hidden'); quickBar.style.display = 'flex'; }
-    if (quickIndicator) quickIndicator.textContent = `طاولة رقم [ ${tableNum} ]`;
-  }
-
-  playCustomerBeep();
-
-  const currentRest = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-  const alertPayload = {
-    type: 'CALL_WAITER',
-    service: 'call_waiter',
-    tableNumber: tableNum,
-    restaurant_id: currentRest,
-    timestamp: Date.now()
-  };
-
-  // 1. الإرسال الفوري محلياً لجميع شاشات النظام عبر BroadcastChannel
-  try {
-    if ('BroadcastChannel' in window) {
-      const bc = new BroadcastChannel('smart_emenu_channel');
-      bc.postMessage(alertPayload);
-    }
-  } catch(e) {}
-
-  // 2. البث السحابي اللحظي عبر Supabase Realtime
-  try {
-    const client = (typeof getSupabase === 'function') ? getSupabase() : null;
-    if (client) {
-      const channelName = `orders_channel_${currentRest}`;
-      const ch = client.channel(channelName);
-      ch.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          ch.send({
-            type: 'broadcast',
-            event: 'call_waiter',
-            payload: alertPayload
-          });
-        }
-      });
-    }
-  } catch(e) {}
-
-  _waiterCallCooldown = true;
-  setTimeout(() => { _waiterCallCooldown = false; }, 20000);
-
-  alert(`🛎️ تم إرسال نداء إلى الكابتن بنجاح!\nطاولة رقم [ ${tableNum} ]\nالكابتن في طريقه إليكم الآن 🏃‍♂️`);
-};
-
-window.triggerRequestBill = async function() {
-  if (_billRequestCooldown) {
-    alert("⏳ لقد أرسلت طلب الفاتورة مسبقاً! جاري إعداد وتجهيز الحساب من الكاشير.");
-    return;
-  }
-
-  let tableNum = selectedTableNumber;
-  if (!tableNum || isNaN(tableNum) || tableNum <= 0) {
-    const input = prompt("يرجى إدخال رقم طاولتك لطلب الفاتورة والحساب:");
-    if (!input) return;
-    tableNum = parseInt(input);
-    if (isNaN(tableNum) || tableNum <= 0) {
-      alert("رقم الطاولة غير صحيح!");
-      return;
-    }
-    selectedTableNumber = tableNum;
-    sessionStorage.setItem('customer_table_number', tableNum);
-    const quickBar = document.getElementById('quick-table-service-bar');
-    const quickIndicator = document.getElementById('quick-table-indicator');
-    if (quickBar) { quickBar.classList.remove('hidden'); quickBar.style.display = 'flex'; }
-    if (quickIndicator) quickIndicator.textContent = `طاولة رقم [ ${tableNum} ]`;
-  }
-
-  playCustomerBeep();
-
-  const currentRest = (typeof getActiveRestaurantId === 'function') ? getActiveRestaurantId() : 'fahma_dokhan';
-  const alertPayload = {
-    type: 'REQUEST_BILL',
-    service: 'request_bill',
-    tableNumber: tableNum,
-    restaurant_id: currentRest,
-    timestamp: Date.now()
-  };
-
-  // 1. الإرسال الفوري محلياً لجميع شاشات النظام عبر BroadcastChannel
-  try {
-    if ('BroadcastChannel' in window) {
-      const bc = new BroadcastChannel('smart_emenu_channel');
-      bc.postMessage(alertPayload);
-    }
-  } catch(e) {}
-
-  // 2. البث السحابي اللحظي عبر Supabase Realtime
-  try {
-    const client = (typeof getSupabase === 'function') ? getSupabase() : null;
-    if (client) {
-      const channelName = `orders_channel_${currentRest}`;
-      const ch = client.channel(channelName);
-      ch.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          ch.send({
-            type: 'broadcast',
-            event: 'request_bill',
-            payload: alertPayload
-          });
-        }
-      });
-    }
-  } catch(e) {}
-
-  _billRequestCooldown = true;
-  setTimeout(() => { _billRequestCooldown = false; }, 20000);
-
-  alert(`💳 تم إرسال طلب الفاتورة للكاشير بنجاح!\nطاولة رقم [ ${tableNum} ]\nموظف الحسابات في خدمتكم فوراً 🧾`);
-};

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>تتبع حالة الطلب | بَنان Banan</title>
+  
+  <link rel="manifest" href="manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="تتبع طلبك" />
+  <link rel="apple-touch-icon" href="logo.svg" />
+  
+  <!-- Tailwind CSS CDN -->
+  <link rel="stylesheet" href="tailwind.min.css?v=6.0" />
+  <link rel="stylesheet" href="styles.css?v=6.0" />
+  
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 10%, #171f33 0%, #090d16 100%);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+    .glass-card {
+      background: rgba(22, 30, 48, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .step-active {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+    }
+    .step-current {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.6);
+      animation: pulseStep 1.8s infinite;
+    }
+    @keyframes pulseStep {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.08); }
+    }
+  </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col items-center justify-start p-4">
+
+  <!-- Header -->
+  <header class="w-full max-w-md py-4 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-sm shadow">ب</div>
+      <span class="font-black text-amber-400 text-lg">بَنان Banan</span>
+    </a>
+    <span class="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700">تتبع الطلب الحي 🔴</span>
+  </header>
+
+  <!-- Main Card -->
+  <main class="w-full max-w-md space-y-4">
+
+    <!-- Order State Header -->
+    <div class="glass-card rounded-3xl p-6 text-center space-y-3 relative overflow-hidden">
+      <div id="status-icon" class="w-20 h-20 mx-auto rounded-3xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-4xl shadow-inner">
+        👨‍🍳
+      </div>
+      <div>
+        <h1 id="status-title" class="text-xl font-black text-white">جاري تحضير طلبك في المطبخ</h1>
+        <p id="status-desc" class="text-xs text-slate-400 mt-1">يقوم الطاهي الآن بإعداد وجباتك الشهية بعناية</p>
+      </div>
+
+      <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-700 text-xs font-mono text-amber-300">
+        <span>رقم الطلب:</span>
+        <b id="order-id-display">#...</b>
+      </div>
+    </div>
+
+    <!-- Stepper Tracker -->
+    <div class="glass-card rounded-3xl p-6 space-y-6">
+      <h3 class="text-xs font-bold text-slate-300">مسار وحالة التوصيل</h3>
+
+      <div class="space-y-6 relative">
+        <!-- Connecting Line -->
+        <div class="absolute right-[19px] top-4 bottom-4 w-0.5 bg-slate-700 -z-0"></div>
+
+        <!-- Step 1 -->
+        <div class="flex items-start gap-4 relative z-10" id="step-1">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm bg-slate-800 text-slate-400 border border-slate-700 step-indicator">
+            📥
+          </div>
+          <div class="flex-1 pt-1">
+            <h4 class="text-sm font-bold text-white">تم استلام الطلب</h4>
+            <p class="text-xs text-slate-400">تم تسجيل طلبك وإرساله للمطعم بنجاح</p>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="flex items-start gap-4 relative z-10" id="step-2">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm bg-slate-800 text-slate-400 border border-slate-700 step-indicator">
+            👨‍🍳
+          </div>
+          <div class="flex-1 pt-1">
+            <h4 class="text-sm font-bold text-white">قيد التجهيز في المطبخ</h4>
+            <p class="text-xs text-slate-400">المطبخ يقوم بتجهيز وجباتك وتغليفها</p>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="flex items-start gap-4 relative z-10" id="step-3">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm bg-slate-800 text-slate-400 border border-slate-700 step-indicator">
+            🛵
+          </div>
+          <div class="flex-1 pt-1">
+            <h4 class="text-sm font-bold text-white">خرج مع مندوب التوصيل</h4>
+            <p class="text-xs text-slate-400">الطلب في الطريق إليك الآن</p>
+          </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="flex items-start gap-4 relative z-10" id="step-4">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm bg-slate-800 text-slate-400 border border-slate-700 step-indicator">
+            ✅
+          </div>
+          <div class="flex-1 pt-1">
+            <h4 class="text-sm font-bold text-white">تم وصول الطلب والتسليم</h4>
+            <p class="text-xs text-slate-400">نتمنى لك وجبة شهية وهنيئة!</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Order Items & Details -->
+    <div class="glass-card rounded-3xl p-6 space-y-4">
+      <h3 class="text-xs font-bold text-slate-300">تفاصيل الفاتورة والوجبات</h3>
+      
+      <div id="order-items-list" class="divide-y divide-slate-800 text-xs space-y-2">
+        <!-- الأصناف -->
+      </div>
+
+      <div class="pt-3 border-t border-slate-800 space-y-2 text-xs">
+        <div class="flex justify-between text-slate-400">
+          <span>المجموع الفرعي:</span>
+          <span id="subtotal-val" class="font-mono text-slate-200">0 د.ع</span>
+        </div>
+        <div class="flex justify-between text-slate-400">
+          <span>رسوم التوصيل:</span>
+          <span id="delivery-val" class="font-mono text-slate-200">0 د.ع</span>
+        </div>
+        <div class="flex justify-between font-bold text-sm text-white pt-2 border-t border-slate-700">
+          <span>المجموع النهائي:</span>
+          <span id="total-val" class="font-mono text-amber-400 font-black">0 د.ع</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contact Support -->
+    <div class="text-center pt-2 pb-6">
+      <a href="https://wa.me/9647755009771" target="_blank" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition">
+        <span>💬</span>
+        <span>تواصل مع خدمة عملاء بنان (واتساب)</span>
+      </a>
+    </div>
+
+  </main>
+
+  <!-- Scripts -->
+  <script src="env-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = localStorage.getItem('smart_emenu_supabase_url') || (window.__ENV__ && window.__ENV__.SUPABASE_URL) || 'https://vyeolhhipsdcnntfbksy.supabase.co';
+    const SUPABASE_KEY = localStorage.getItem('smart_emenu_supabase_anon_key') || (window.__ENV__ && window.__ENV__.SUPABASE_ANON_KEY) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5ZW9saGhpcHNkY25udGZia3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNDk2MDksImV4cCI6MjEwNDYyNTYwOX0.mLBkQh2r1iCarmWU76xrQVQprq305hnDAK95nMe1yh8';
+    const supabase = window.supabase?.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get('order') || params.get('id') || params.get('orderId');
+
+    async function loadOrder() {
+      if (!orderId) {
+        document.getElementById('status-title').textContent = 'رابط غير صحيح';
+        document.getElementById('order-id-display').parentElement.style.display = 'none';
+        return;
+      }
+      document.getElementById('order-id-display').textContent = '#' + orderId.slice(0, 8);
+
+      if (!supabase) return;
+      const { data: order, error } = await supabase
+        .from('restaurant_orders')
+        .select('*')
+        .eq('id', orderId)
+        .single();
+
+      if (error || !order) {
+        // فحص في localStorage كاحتياط
+        const local = JSON.parse(localStorage.getItem('smart_emenu_fahma_dokhan_orders') || '[]');
+        const found = local.find(o => o.id === orderId);
+        if (found) renderOrder(found);
+        return;
+      }
+
+      renderOrder(order);
+    }
+
+    function renderOrder(order) {
+      // Items
+      const itemsList = document.getElementById('order-items-list');
+      const items = Array.isArray(order.items) ? order.items : [];
+      itemsList.innerHTML = items.map(it => `
+        <div class="flex justify-between py-2">
+          <span>${it.quantity}x ${it.name}</span>
+          <span class="font-mono text-slate-300">${((it.price || 0) * (it.quantity || 1)).toLocaleString()} د.ع</span>
+        </div>
+      `).join('');
+
+      document.getElementById('subtotal-val').textContent = (order.total || 0).toLocaleString() + ' د.ع';
+      document.getElementById('delivery-val').textContent = (order.deliveryFee || 0).toLocaleString() + ' د.ع';
+      document.getElementById('total-val').textContent = (order.total || 0).toLocaleString() + ' د.ع';
+
+      // Status logic
+      // status: pending_kitchen, in_kitchen, served, completed
+      // delivery_status: received, preparing, out_for_delivery, delivered
+      let currentStep = 1;
+      const dStat = order.delivery_status || '';
+      const oStat = order.status || '';
+
+      if (oStat === 'completed' || dStat === 'delivered') {
+        currentStep = 4;
+        document.getElementById('status-icon').textContent = '✅';
+        document.getElementById('status-title').textContent = 'تم تسليم الطلب بنجاح';
+        document.getElementById('status-desc').textContent = 'شكراً لطلبك عبر بَنان! بالهناء والشفاء';
+      } else if (dStat === 'out_for_delivery') {
+        currentStep = 3;
+        document.getElementById('status-icon').textContent = '🛵';
+        document.getElementById('status-title').textContent = 'خرج الطلب مع مندوب التوصيل';
+        document.getElementById('status-desc').textContent = 'مندوب بنان يقترب من موقعك الآن';
+      } else if (oStat === 'in_kitchen' || dStat === 'preparing') {
+        currentStep = 2;
+        document.getElementById('status-icon').textContent = '👨‍🍳';
+        document.getElementById('status-title').textContent = 'جاري التجهيز في المطبخ';
+        document.getElementById('status-desc').textContent = 'يتم الآن تحضير الأطباق وتغليفها بأعلى معايير الجودة';
+      } else {
+        currentStep = 1;
+        document.getElementById('status-icon').textContent = '📥';
+        document.getElementById('status-title').textContent = 'تم استلام طلبك';
+        document.getElementById('status-desc').textContent = 'جاري مراجعة الطلب من قبل المطعم';
+      }
+
+      // Update Steppers UI
+      for (let i = 1; i <= 4; i++) {
+        const stepEl = document.getElementById(`step-${i}`);
+        const indicator = stepEl?.querySelector('.step-indicator');
+        if (!indicator) continue;
+
+        indicator.classList.remove('step-active', 'step-current', 'bg-slate-800', 'text-slate-400');
+        if (i < currentStep) {
+          indicator.classList.add('step-active', 'text-white');
+        } else if (i === currentStep) {
+          indicator.classList.add('step-current', 'text-slate-950');
+        } else {
+          indicator.classList.add('bg-slate-800', 'text-slate-400');
+        }
+      }
+    }
+
+    // Realtime Subscription
+    document.addEventListener('DOMContentLoaded', () => {
+      loadOrder();
+      if (supabase && orderId) {
+        supabase.channel(`track_order_${orderId}`)
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'restaurant_orders', filter: `id=eq.${orderId}` }, (payload) => {
+            renderOrder(payload.new);
+          })
+          .subscribe();
+      }
+    });
+  </script>
+</body>
+</html>

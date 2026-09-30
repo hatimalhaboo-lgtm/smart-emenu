@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="robots" content="noindex, nofollow">
+  <title>تسجيل الدخول — نظام المطعم</title>
+
+  <!-- منع الفهرسة وإخفاء الصفحة عن المنيو العام -->
+  <meta name="googlebot" content="noindex">
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="تسجيل الدخول" />
+  <link rel="apple-touch-icon" href="logo.svg" />
+
+  <!-- Tailwind CSS -->
+  <link rel="stylesheet" href="tailwind.min.css?v=6.0" />
+
+  <!-- Supabase Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100svh;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+    }
+    .glass-card {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    input:-webkit-autofill {
+      -webkit-box-shadow: 0 0 0 1000px #1e293b inset;
+      -webkit-text-fill-color: #f8fafc;
+    }
+    .btn-login:active { transform: scale(0.97); }
+    .shake { animation: shake 0.4s ease; }
+    @keyframes shake {
+      0%,100%{transform:translateX(0)}
+      20%,60%{transform:translateX(-8px)}
+      40%,80%{transform:translateX(8px)}
+    }
+    .role-tab { transition: all 0.2s; }
+    .role-tab.active {
+      background: rgba(99,102,241,0.3);
+      border-color: rgba(99,102,241,0.6);
+    }
+  </style>
+</head>
+<body class="flex items-center justify-center p-4">
+
+  <div class="w-full max-w-sm">
+
+    <!-- الشعار -->
+    <div class="text-center mb-8">
+      <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center shadow-2xl shadow-rose-900/50">
+        <img src="/logo.svg" alt="شعار المطعم" class="w-12 h-12" onerror="this.style.display='none'; this.parentElement.innerHTML='🍽️'">
+      </div>
+      <h1 class="text-2xl font-black text-white mb-1">دخول فريق العمل</h1>
+      <p class="text-slate-400 text-sm">نظام إدارة المطعم الذكي</p>
+    </div>
+
+    <!-- بطاقة تسجيل الدخول وإنشاء الحساب -->
+    <div class="glass-card rounded-3xl p-6 shadow-2xl relative">
+
+      <!-- أزرار التبديل الرئيسية: تسجيل الدخول / إنشاء حساب جديد -->
+      <div class="flex items-center p-1 bg-slate-900/80 rounded-2xl border border-slate-700/60 mb-5">
+        <button type="button" onclick="switchAuthMode('login')" id="btn-mode-login" class="flex-1 py-2 text-xs font-bold rounded-xl transition-all bg-indigo-600 text-white shadow-md">
+          تسجيل الدخول
+        </button>
+        <button type="button" onclick="switchAuthMode('register')" id="btn-mode-register" class="flex-1 py-2 text-xs font-bold rounded-xl transition-all text-slate-400 hover:text-white">
+          إنشاء حساب جديد ✨
+        </button>
+      </div>
+
+      <!-- ==================== القسم 1: نموذج تسجيل الدخول ==================== -->
+      <div id="section-login">
+        <!-- تبويبات الأدوار السريعة (مدير، كاشير، كابتن، سائق) -->
+        <div class="grid grid-cols-4 gap-1.5 mb-5">
+          <button onclick="setRole('admin')" class="role-tab text-[11px] py-2 px-1 rounded-xl border border-slate-700 text-slate-300 text-center transition-all" id="tab-admin">
+            <div class="text-sm mb-0.5">👨‍💼</div>
+            <div>مدير</div>
+          </button>
+          <button onclick="setRole('cashier')" class="role-tab text-[11px] py-2 px-1 rounded-xl border border-slate-700 text-slate-300 text-center transition-all active" id="tab-cashier">
+            <div class="text-sm mb-0.5">💰</div>
+            <div>كاشير</div>
+          </button>
+          <button onclick="setRole('captain')" class="role-tab text-[11px] py-2 px-1 rounded-xl border border-slate-700 text-slate-300 text-center transition-all" id="tab-captain">
+            <div class="text-sm mb-0.5">🧑‍🍳</div>
+            <div>كابتن</div>
+          </button>
+          <button onclick="setRole('driver')" class="role-tab text-[11px] py-2 px-1 rounded-xl border border-slate-700 text-slate-300 text-center transition-all" id="tab-driver">
+            <div class="text-sm mb-0.5">🛵</div>
+            <div>سائق</div>
+          </button>
+        </div>
+
+        <!-- النموذج -->
+        <form onsubmit="event.preventDefault(); handleLogin();" autocomplete="off" class="space-y-4">
+
+          <!-- اسم المستخدم أو البريد الإلكتروني -->
+          <div>
+            <label class="block text-xs text-slate-400 font-bold mb-1.5">اسم المستخدم أو البريد الإلكتروني الشخصي</label>
+            <input type="text" id="login-username" name="username" autocomplete="off" autocorrect="off" autocapitalize="off"
+              class="w-full bg-slate-800/80 border border-slate-600 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+              placeholder="اسم المستخدم أو الإيميل" dir="ltr">
+          </div>
+
+          <!-- كلمة المرور -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs text-slate-400 font-bold">كلمة المرور (8 خانات على الأقل)</label>
+              <button type="button" onclick="openForgotPwdModal()" class="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors">
+                نسيت كلمة المرور؟
+              </button>
+            </div>
+            <div class="relative">
+              <input type="password" id="login-password" name="password" autocomplete="new-password" minlength="8"
+                class="w-full bg-slate-800/80 border border-slate-600 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all pr-12 font-mono"
+                placeholder="••••••••" dir="ltr">
+              <button type="button" onclick="togglePwd('login-password')" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- تذكرني -->
+          <div class="flex items-center gap-2">
+            <input type="checkbox" id="remember-me" class="w-4 h-4 rounded accent-indigo-500" checked>
+            <label for="remember-me" class="text-xs text-slate-400">تذكرني على هذا الجهاز (30 يوماً)</label>
+          </div>
+
+          <!-- رسالة الخطأ -->
+          <div id="login-error" class="hidden bg-rose-900/40 border border-rose-700/50 rounded-xl px-4 py-3 text-rose-300 text-sm text-center"></div>
+
+          <!-- زر الدخول -->
+          <button type="submit" id="login-btn"
+            class="btn-login w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-900/40 transition-all text-sm mt-2">
+            🚀 تسجيل الدخول
+          </button>
+
+        </form>
+      </div>
+
+      <!-- ==================== القسم 2: إنشاء حساب جديد للموظف ==================== -->
+      <div id="section-register" class="hidden space-y-4">
+        <div class="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl text-center">
+          <p class="text-xs text-indigo-200">
+            سجّل حسابك بالبريد الشخصي، وسيقوم السوبر أدمن بتفعيله واعتماد صلاحياتك فورياً.
+          </p>
+        </div>
+
+        <form onsubmit="event.preventDefault(); handleRegister();" autocomplete="off" class="space-y-3 text-right">
+          <!-- الاسم الكامل -->
+          <div>
+            <label class="block text-xs text-slate-400 font-bold mb-1">الاسم الكامل *</label>
+            <input type="text" id="reg-fullname" required placeholder="مثال: أحمد مصطفى"
+              class="w-full bg-slate-800/80 border border-slate-600 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-indigo-500 transition-all">
+          </div>
+
+          <!-- البريد الإلكتروني الشخصي -->
+          <div>
+            <label class="block text-xs text-slate-400 font-bold mb-1">البريد الإلكتروني الشخصي *</label>
+            <input type="email" id="reg-email" required placeholder="name@example.com" dir="ltr"
+              class="w-full bg-slate-800/80 border border-slate-600 rounded-xl px-4 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-indigo-500 transition-all">
+          </div>
+
+          <!-- كلمة المرور (8 خانات على الأقل) -->
+          <div>
+            <label class="block text-xs text-slate-400 font-bold mb-1">كلمة المرور (8 خانات على الأقل) *</label>
+            <div class="relative">
+              <input type="password" id="reg-password" required minlength="8" placeholder="••••••••" dir="ltr"
+                class="w-full bg-slate-800/80 border border-slate-600 rounded-xl px-4 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-indigo-500 transition-all pr-10">
+              <button type="button" onclick="togglePwd('reg-password')" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+                👁️
+              </button>
+            </div>
+          </div>
+
+          <!-- الرتبة المطلوبة -->
+          <div>
+            <label class="block text-xs text-slate-400 font-bold mb-1">الرتبة والوظيفة المطلوبة *</label>
+            <select id="reg-role" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2.5 text-white text-xs font-bold focus:outline-none focus:border-indigo-500">
+              <option value="cashier">💻 كاشير الصندوق (Cashier)</option>
+              <option value="captain">👨‍🍳 كابتن الصالة (Captain)</option>
+              <option value="driver">🛵 كابتن التوصيل (Driver)</option>
+              <option value="admin">🏢 مدير المطعم (Manager)</option>
+            </select>
+          </div>
+
+          <!-- رسالة الخطأ للتسجيل -->
+          <div id="reg-error" class="hidden bg-rose-900/40 border border-rose-700/50 rounded-xl px-4 py-2.5 text-rose-300 text-xs text-center"></div>
+
+          <!-- زر إرسال التسجيل -->
+          <button type="submit" id="reg-btn"
+            class="btn-login w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-900/40 transition-all text-sm mt-3">
+            ✨ إنشاء الحساب وإرسال للمراجعة
+          </button>
+        </form>
+      </div>
+
+    </div>
+
+    <!-- مودال: تم تسجيل الحساب وبانتظار التفعيل من الإدارة -->
+    <div id="pendingModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div class="max-w-sm w-full bg-slate-900 border border-emerald-500/40 rounded-3xl p-6 text-center shadow-2xl space-y-4">
+        <div class="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-3xl mx-auto">
+          ⏳
+        </div>
+        <h3 class="text-lg font-black text-white">تم تسجيل حسابك بنجاح! 🎉</h3>
+        <p class="text-xs text-slate-300 leading-relaxed bg-slate-950 p-4 rounded-2xl border border-slate-800 text-right">
+          حسابك حالياً <strong class="text-amber-400">قيد المراجعة</strong>، وبانتظار التفعيل وتعيين الرتبة من قبل الإدارة المركزية قبل تسجيل الدخول. سيتمكن السوبر أدمن من تفعيل حسابك فوراً.
+        </p>
+        <button onclick="closePendingModal()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition">
+          حسناً، الانتقال لشاشة الدخول 🚀
+        </button>
+      </div>
+    </div>
+
+    <!-- مودال: نسيت كلمة المرور عبر البريد الإلكتروني -->
+    <div id="forgotPwdModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div class="max-w-sm w-full bg-slate-900 border border-indigo-500/40 rounded-3xl p-6 text-right shadow-2xl space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-black text-white flex items-center gap-1.5">
+            <span>✉️</span>
+            <span>استعادة كلمة المرور سحابياً</span>
+          </h3>
+          <button onclick="closeForgotPwdModal()" class="text-slate-400 hover:text-white text-base">✕</button>
+        </div>
+
+        <p class="text-xs text-slate-400">
+          أدخل بريدك الإلكتروني المسجل وسنرسل لك رابط إعادة تعيين كلمة المرور فورياً ومجاناً.
+        </p>
+
+        <form onsubmit="event.preventDefault(); handleForgotPassword();" class="space-y-3">
+          <div>
+            <label class="block text-xs text-slate-400 font-bold mb-1">البريد الإلكتروني الشخصي</label>
+            <input type="email" id="forgot-email" required placeholder="name@example.com" dir="ltr"
+              class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-indigo-500 transition-all">
+          </div>
+
+          <div id="forgot-msg" class="hidden rounded-xl px-4 py-2.5 text-xs text-center font-bold"></div>
+
+          <button type="submit" id="forgot-btn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-lg">
+            إرسال رابط الاستعادة 📧
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- رابط العودة للمنيو -->
+    <div class="text-center mt-6">
+      <a href="/" class="text-slate-500 hover:text-slate-300 text-xs transition-colors">
+        ← العودة للمنيو الرقمي
+      </a>
+    </div>
+
+    <!-- معلومات الإصدار -->
+    <div class="text-center mt-4">
+      <p class="text-slate-700 text-xs">v5.8 — Smart Restaurant POS</p>
+    </div>
+  </div>
+
+  <!-- Auth Core -->
+  <script src="env-config.js"></script>
+  <script src="auth-core.js?v=6.1"></script>
+
+  <script>
+    // ===== إعداد Supabase =====
+    (function() {
+      const SUPABASE_URL = localStorage.getItem('smart_emenu_supabase_url') || (window.__ENV__ && window.__ENV__.SUPABASE_URL) || 'https://vyeolhhipsdcnntfbksy.supabase.co';
+      const SUPABASE_KEY = localStorage.getItem('smart_emenu_supabase_anon_key') || (window.__ENV__ && window.__ENV__.SUPABASE_ANON_KEY) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5ZW9saGhpcHNkY25udGZia3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNDk2MDksImV4cCI6MjEwNDYyNTYwOX0.mLBkQh2r1iCarmWU76xrQVQprq305hnDAK95nMe1yh8';
+      if (window.supabase && typeof window.supabase.createClient === 'function') {
+        window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      }
+    })();
+
+    // ===== تبديل نمط المصادقة (دخول / إنشاء حساب جديد) =====
+    function switchAuthMode(mode) {
+      const secLogin = document.getElementById('section-login');
+      const secReg = document.getElementById('section-register');
+      const btnLogin = document.getElementById('btn-mode-login');
+      const btnReg = document.getElementById('btn-mode-register');
+
+      if (mode === 'register') {
+        secLogin.classList.add('hidden');
+        secReg.classList.remove('hidden');
+        btnReg.className = 'flex-1 py-2 text-xs font-bold rounded-xl transition-all bg-emerald-600 text-white shadow-md';
+        btnLogin.className = 'flex-1 py-2 text-xs font-bold rounded-xl transition-all text-slate-400 hover:text-white';
+        document.getElementById('reg-fullname').focus();
+      } else {
+        secReg.classList.add('hidden');
+        secLogin.classList.remove('hidden');
+        btnLogin.className = 'flex-1 py-2 text-xs font-bold rounded-xl transition-all bg-indigo-600 text-white shadow-md';
+        btnReg.className = 'flex-1 py-2 text-xs font-bold rounded-xl transition-all text-slate-400 hover:text-white';
+        document.getElementById('login-username').focus();
+      }
+      hideError();
+    }
+
+    // ===== حالة التبويبات للأدوار السريعة =====
+    let selectedRole = 'cashier';
+
+    function setRole(role) {
+      selectedRole = role;
+      document.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active'));
+      const userInput = document.getElementById('login-username');
+      if (role === 'admin') {
+        document.getElementById('tab-admin')?.classList.add('active');
+        userInput.value = 'admin';
+      } else if (role === 'cashier') {
+        document.getElementById('tab-cashier')?.classList.add('active');
+        userInput.value = 'cashier';
+      } else if (role === 'captain') {
+        document.getElementById('tab-captain')?.classList.add('active');
+        userInput.value = 'captain';
+      } else if (role === 'driver') {
+        document.getElementById('tab-driver')?.classList.add('active');
+        userInput.value = 'driver';
+      } else {
+        userInput.value = '';
+      }
+      document.getElementById('login-password').value = '';
+      document.getElementById('login-password').focus();
+      hideError();
+    }
+
+    // ===== إظهار/إخفاء كلمة المرور =====
+    function togglePwd(inputId = 'login-password') {
+      const inp = document.getElementById(inputId);
+      if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('login-error');
+      if (el) {
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        el.classList.add('shake');
+        setTimeout(() => el.classList.remove('shake'), 400);
+      }
+    }
+
+    function hideError() {
+      document.getElementById('login-error')?.classList.add('hidden');
+      document.getElementById('reg-error')?.classList.add('hidden');
+    }
+
+    // ===== معالجة تسجيل الدخول =====
+    async function handleLogin() {
+      const username = (document.getElementById('login-username').value || '').trim();
+      const password = document.getElementById('login-password').value || '';
+      const remember = document.getElementById('remember-me').checked;
+      const btn = document.getElementById('login-btn');
+
+      hideError();
+
+      if (!username) { showError('يرجى إدخال اسم المستخدم أو البريد الإلكتروني'); return; }
+      if (!password || password.length < 8) {
+        showError('يجب أن تتكون كلمة المرور من 8 خانات على الأقل');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> جاري التحقق...';
+
+      try {
+        const loginFn = window.AuthCore?.loginUserAsync || window.loginUserAsync;
+        if (!loginFn) {
+          showError('خطأ في تحميل نظام المصادقة. يرجى إعادة تحميل الصفحة.');
+          return;
+        }
+
+        const result = await loginFn(username, password, remember);
+
+        if (result.success) {
+          btn.innerHTML = '✅ تم تسجيل الدخول...';
+
+          // التوجيه حسب الدور
+          const restId = result.restaurantId || 'fahma_dokhan';
+          const restParam = `?rest=${encodeURIComponent(restId)}`;
+
+          const roleMap = {
+            'super_admin': 'super-admin.html',
+            'admin': 'admin.html' + restParam,
+            'cashier': 'cashier.html' + restParam,
+            'captain': 'captain.html' + restParam,
+            'driver': 'driver.html' + restParam
+          };
+
+          const redirectUrl = roleMap[result.role] || ('index.html' + restParam);
+
+          if (result.role === 'driver') {
+            localStorage.setItem('smart_emenu_driver_id', result.session?.userId || '1');
+            localStorage.setItem('smart_emenu_driver_name', result.session?.name || 'سائق التوصيل');
+          }
+
+          setTimeout(() => { window.location.href = redirectUrl; }, 400);
+        } else {
+          showError(result.message || 'اسم المستخدم أو كلمة المرور غير صحيحة');
+          document.getElementById('login-password').value = '';
+          document.getElementById('login-password').focus();
+        }
+      } catch (err) {
+        console.error('Login error:', err);
+        showError('حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.');
+      } finally {
+        btn.disabled = false;
+        if (!btn.innerHTML.includes('تم')) {
+          btn.innerHTML = '🚀 تسجيل الدخول';
+        }
+      }
+    }
+
+    // ===== معالجة إنشاء حساب موظف جديد ذاتياً =====
+    async function handleRegister() {
+      const fullName = (document.getElementById('reg-fullname').value || '').trim();
+      const email = (document.getElementById('reg-email').value || '').trim();
+      const password = document.getElementById('reg-password').value || '';
+      const role = document.getElementById('reg-role').value || 'cashier';
+      const errEl = document.getElementById('reg-error');
+      const btn = document.getElementById('reg-btn');
+
+      errEl.classList.add('hidden');
+
+      if (!fullName) {
+        errEl.textContent = 'يرجى إدخال الاسم الكامل';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (!email || !email.includes('@')) {
+        errEl.textContent = 'يرجى إدخال بريد إلكتروني صحيح';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (!password || password.length < 8) {
+        errEl.textContent = 'يجب أن تتكون كلمة المرور من 8 خانات على الأقل';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> جاري حفظ الحساب...';
+
+      try {
+        const regFn = window.AuthCore?.registerNewUserAsync || window.registerNewUserAsync;
+        if (!regFn) {
+          errEl.textContent = 'نظام المصادقة غير متاح حالياً، يرجى تحديث الصفحة';
+          errEl.classList.remove('hidden');
+          return;
+        }
+
+        const res = await regFn({
+          fullName,
+          email,
+          password,
+          role,
+          restaurantId: window.AuthCore?.getActiveRestaurantId() || 'fahma_dokhan'
+        });
+
+        if (res.success) {
+          document.getElementById('reg-fullname').value = '';
+          document.getElementById('reg-email').value = '';
+          document.getElementById('reg-password').value = '';
+          // إظهار نافذة الموافقة والانتظار
+          document.getElementById('pendingModal').classList.remove('hidden');
+        } else {
+          errEl.textContent = res.message || 'تعذر إنشاء الحساب!';
+          errEl.classList.remove('hidden');
+        }
+      } catch (err) {
+        errEl.textContent = 'حدث خطأ: ' + err.message;
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '✨ إنشاء الحساب وإرسال للمراجعة';
+      }
+    }
+
+    function closePendingModal() {
+      document.getElementById('pendingModal').classList.add('hidden');
+      switchAuthMode('login');
+    }
+
+    // ===== استعادة كلمة المرور =====
+    function openForgotPwdModal() {
+      document.getElementById('forgot-msg').classList.add('hidden');
+      document.getElementById('forgotPwdModal').classList.remove('hidden');
+      document.getElementById('forgot-email').focus();
+    }
+
+    function closeForgotPwdModal() {
+      document.getElementById('forgotPwdModal').classList.add('hidden');
+    }
+
+    async function handleForgotPassword() {
+      const email = (document.getElementById('forgot-email').value || '').trim();
+      const msgEl = document.getElementById('forgot-msg');
+      const btn = document.getElementById('forgot-btn');
+
+      if (!email || !email.includes('@')) {
+        msgEl.className = 'rounded-xl px-4 py-2.5 text-xs text-center font-bold bg-rose-900/50 text-rose-300 border border-rose-700/50';
+        msgEl.textContent = 'يرجى إدخال بريد إلكتروني صالح';
+        msgEl.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = 'جاري الإرسال... ⏳';
+
+      try {
+        const resetFn = window.AuthCore?.resetPasswordViaEmail || window.resetPasswordViaEmail;
+        if (resetFn) {
+          const res = await resetFn(email);
+          if (res.success) {
+            msgEl.className = 'rounded-xl px-4 py-2.5 text-xs text-center font-bold bg-emerald-900/50 text-emerald-300 border border-emerald-700/50';
+            msgEl.textContent = res.message;
+          } else {
+            msgEl.className = 'rounded-xl px-4 py-2.5 text-xs text-center font-bold bg-amber-900/50 text-amber-300 border border-amber-700/50';
+            msgEl.textContent = res.message;
+          }
+        } else {
+          msgEl.className = 'rounded-xl px-4 py-2.5 text-xs text-center font-bold bg-rose-900/50 text-rose-300 border border-rose-700/50';
+          msgEl.textContent = 'خدمة إعادة التعيين غير متاحة حالياً';
+        }
+        msgEl.classList.remove('hidden');
+      } catch (err) {
+        msgEl.className = 'rounded-xl px-4 py-2.5 text-xs text-center font-bold bg-rose-900/50 text-rose-300 border border-rose-700/50';
+        msgEl.textContent = 'حدث خطأ: ' + err.message;
+        msgEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'إرسال رابط الاستعادة 📧';
+      }
+    }
+
+    // ===== التحقق من الجلسة الحالية =====
+    (function checkExistingSession() {
+      try {
+        const p = new URLSearchParams(window.location.search);
+        if (p.has('logout')) {
+          if (window.AuthCore?.clearSession) window.AuthCore.clearSession();
+          return;
+        }
+        if (p.has('role') || p.has('force')) {
+          return;
+        }
+        const getSession = window.AuthCore?.getCurrentSession || window.getCurrentSession;
+        if (!getSession) return;
+        const session = getSession();
+        if (session && session.role) {
+          const restId = session.restaurantId || 'fahma_dokhan';
+          const restParam = `?rest=${encodeURIComponent(restId)}`;
+          const roleMap = {
+            'super_admin': 'super-admin.html',
+            'admin': 'admin.html' + restParam,
+            'cashier': 'cashier.html' + restParam,
+            'captain': 'captain.html' + restParam,
+            'driver': 'driver.html' + restParam
+          };
+          window.location.replace(roleMap[session.role] || '/');
+        }
+      } catch(e) {}
+    })();
+
+    // ===== اختصار لوحة المفاتيح =====
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const secReg = document.getElementById('section-register');
+        if (secReg && !secReg.classList.contains('hidden')) {
+          handleRegister();
+        } else {
+          handleLogin();
+        }
+      }
+    });
+
+    // ===== القيمة الافتراضية عند فتح الصفحة =====
+    document.addEventListener('DOMContentLoaded', () => {
+      setRole('cashier');
+      const p = new URLSearchParams(window.location.search);
+      const roleParam = p.get('role');
+      if (roleParam) setRole(roleParam);
+      if (p.get('mode') === 'register') switchAuthMode('register');
+
+      // معالجة العودة بعد الضغط على رابط تأكيد البريد الإلكتروني
+      if (p.has('verified')) {
+        document.getElementById('pendingModal').classList.remove('hidden');
+        const h3 = document.querySelector('#pendingModal h3');
+        if (h3) h3.textContent = '🎉 تم تأكيد بريدك الإلكتروني بنجاح!';
+        const desc = document.querySelector('#pendingModal p');
+        if (desc) desc.innerHTML = 'تم التحقق من ملكية بريدك الإلكتروني بنجاح عبر الرابط. حسابك حالياً <strong class="text-amber-400">قيد المراجعة</strong>، وبانتظار تفعيل وموافقة السوبر أدمن وتحديد صلاحياتك قبل تسجيل الدخول.';
+      }
+
+      // معالجة العودة بعد الضغط على رابط استعادة كلمة المرور
+      if (p.has('reset')) {
+        openForgotPwdModal();
+      }
+    });
+  </script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('sw.js').catch(function() {});
+      });
+    }
+  </script>
+</body>
+</html>

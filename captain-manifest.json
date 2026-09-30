@@ -1,0 +1,22 @@
+{
+  "name": "كابتن صالة فحمة ودخان",
+  "short_name": "الكابتن",
+  "description": "تطبيق كابتن الصالة الذكي لمتابعة الطاولات والطلبات المباشرة — مطعم فحمة ودخان",
+  "start_url": "captain.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#090d16",
+  "theme_color": "#f59e0b",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["business"],
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

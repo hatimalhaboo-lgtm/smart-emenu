@@ -1,0 +1,22 @@
+{
+  "name": "إدارة مطعم فحمة ودخان",
+  "short_name": "الإدارة",
+  "description": "لوحة تحكم إدارة المطعم، المطبخ، الأسعار، والإحصائيات الحية",
+  "start_url": "admin.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#090d16",
+  "theme_color": "#6366f1",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

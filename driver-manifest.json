@@ -1,0 +1,22 @@
+{
+  "name": "سائق توصيل فحمة ودخان",
+  "short_name": "سائق التوصيل",
+  "description": "تطبيق سائق التوصيل الذكي لتتبع واستلام طلبات التوصيل وتوجيه الملاحة — مطعم فحمة ودخان",
+  "start_url": "driver.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#090d16",
+  "theme_color": "#0284c7",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["business"],
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

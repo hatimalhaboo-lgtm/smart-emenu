@@ -1,0 +1,531 @@
+/* ===================================================================
+   Smart E-Menu - Custom Styles & Print Sheet
+   تصميم عصري فائق الجمال يدعم العربية RTL وطباعة بون المطبخ
+   =================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+
+:root {
+  --primary: #e11d48;
+  --primary-hover: #be123c;
+  --primary-light: #ffe4e6;
+  --primary-dark: #881337;
+  --accent: #f59e0b;
+  --bg-dark: #090d16;
+  --card-dark: #131b2e;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --radius-xl: 18px;
+  --radius-lg: 14px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Display rule */
+.hidden, [hidden] {
+  display: none;
+}
+
+body {
+  font-family: 'Cairo', 'Plus Jakarta Sans', system-ui, sans-serif;
+  background-color: #0b1120;
+  color: var(--text-main);
+  direction: rtl;
+  text-align: right;
+  overflow-x: hidden;
+  min-height: 100vh;
+  padding-bottom: 40px;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0b1120;
+}
+::-webkit-scrollbar-thumb {
+  background: #25334d;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Glassmorphism Classes */
+.glass-header {
+  background: rgba(11, 17, 32, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: rgba(19, 27, 46, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(225, 29, 72, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 15px 35px -10px rgba(225, 29, 72, 0.15);
+}
+
+.glass-modal {
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Category Pills & Tab Horizontal Scroll & Slider for Laptop, Tablet, Mobile */
+.category-scroll, .tab-scroll-container, .pos-scroll, .overflow-x-auto {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto !important;
+  white-space: nowrap;
+  padding: 4px 2px 6px 2px;
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(225, 29, 72, 0.45) rgba(15, 23, 42, 0.7);
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+.category-scroll::-webkit-scrollbar,
+.tab-scroll-container::-webkit-scrollbar,
+.pos-scroll::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar {
+  display: block !important;
+  height: 6px !important;
+}
+.category-scroll::-webkit-scrollbar-track,
+.tab-scroll-container::-webkit-scrollbar-track,
+.pos-scroll::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 9999px;
+}
+.category-scroll::-webkit-scrollbar-thumb,
+.tab-scroll-container::-webkit-scrollbar-thumb,
+.pos-scroll::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: rgba(225, 29, 72, 0.45);
+  border-radius: 9999px;
+}
+.category-scroll::-webkit-scrollbar-thumb:hover,
+.tab-scroll-container::-webkit-scrollbar-thumb:hover,
+.pos-scroll::-webkit-scrollbar-thumb:hover,
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(225, 29, 72, 0.85);
+}
+
+.cat-slider-arrow {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  background: #151e33;
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.cat-pill:hover {
+  color: #fff;
+  background: #1e293b;
+  border-color: rgba(225, 29, 72, 0.3);
+}
+
+.cat-pill.active {
+  background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
+  color: #fff;
+  border-color: #f43f5e;
+  box-shadow: 0 4px 15px rgba(225, 29, 72, 0.35);
+}
+
+/* Dish Card Layout */
+.dish-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #121a2d;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.25s ease;
+}
+
+.dish-card-img-container {
+  position: relative;
+  width: 100%;
+  height: 170px;
+  overflow: hidden;
+  background: #0f172a;
+}
+
+.dish-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s ease;
+}
+
+.dish-card:hover .dish-card-img {
+  transform: scale(1.05);
+}
+
+.dish-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  backdrop-filter: blur(8px);
+  z-index: 2;
+}
+
+.badge-popular {
+  background: rgba(245, 158, 11, 0.9);
+  color: #000;
+}
+
+.badge-new {
+  background: rgba(225, 29, 72, 0.9);
+  color: #fff;
+}
+
+.badge-veg {
+  background: rgba(16, 185, 129, 0.9);
+  color: #fff;
+}
+
+.badge-spicy {
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+}
+
+/* Direct Quantity Stepper on Card */
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  background: #0f172a;
+  border: 1px solid rgba(225, 29, 72, 0.5);
+  border-radius: 9999px;
+  padding: 2px 4px;
+}
+
+.qty-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: bold;
+  background: transparent;
+  color: #f43f5e;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.qty-btn:hover {
+  background: rgba(225, 29, 72, 0.2);
+}
+
+.qty-count {
+  min-width: 28px;
+  text-align: center;
+  font-weight: 800;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+/* Floating Bottom Bar (Cart) */
+.floating-bottom-bar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 600px;
+  z-index: 50;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8), 0 0 25px rgba(225, 29, 72, 0.3);
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+  border: 1px solid rgba(225, 29, 72, 0.4);
+}
+
+/* Badges & Tags */
+.status-pill-locked {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px dashed rgba(239, 68, 68, 0.4);
+}
+
+/* Thermal Kitchen Ticket Print Sheet (80mm POS Receipt Style) */
+/* Thermal Dual Receipt Print Sheet (80mm & 58mm POS Dual Print) */
+#kitchen-print-ticket {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  
+  #kitchen-print-ticket,
+  #kitchen-print-ticket * {
+    visibility: visible !important;
+  }
+  
+  #kitchen-print-ticket {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 72mm;
+    max-width: 72mm;
+    margin: 0;
+    padding: 0;
+    font-family: 'Cairo', monospace, 'Courier New', sans-serif;
+    color: #000 !important;
+    background: #fff !important;
+    direction: rtl;
+    text-align: right;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .thermal-receipt {
+    width: 100%;
+    padding: 6px 4px;
+    box-sizing: border-box;
+  }
+
+  .thermal-cut-divider {
+    page-break-after: always;
+    break-after: page;
+    border-top: 2px dashed #000;
+    border-bottom: 2px dashed #000;
+    text-align: center;
+    padding: 8px 0;
+    margin: 12px 0;
+    font-size: 11px;
+    font-weight: bold;
+  }
+
+  .ticket-header {
+    text-align: center;
+    border-bottom: 2px solid #000;
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+  }
+
+  .ticket-header h2 {
+    font-size: 17px;
+    font-weight: 900;
+    margin: 0;
+    color: #000;
+  }
+
+  .ticket-subtitle {
+    font-size: 12px;
+    font-weight: 800;
+    margin: 2px 0;
+    color: #000;
+  }
+
+  .tagline-print {
+    font-size: 10px;
+    margin-bottom: 2px;
+    color: #333;
+  }
+
+  .ticket-badge-box {
+    display: inline-block;
+    background: #000;
+    color: #fff !important;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 900;
+    margin-top: 4px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .ticket-info {
+    border-bottom: 1px dashed #000;
+    padding-bottom: 5px;
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2px;
+  }
+
+  .customer-highlight {
+    font-weight: 900;
+    font-size: 12px;
+    margin-top: 3px;
+    border-top: 1px dotted #888;
+    padding-top: 3px;
+  }
+
+  .ticket-items table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 6px;
+  }
+
+  .ticket-items th {
+    border-bottom: 2px solid #000;
+    font-size: 11px;
+    font-weight: 900;
+    padding: 3px 0;
+  }
+
+  .ticket-items td {
+    padding: 5px 0;
+    border-bottom: 1px dotted #aaa;
+    font-size: 12px;
+  }
+
+  .ticket-item-qty {
+    font-weight: 900;
+    font-size: 14px;
+    text-align: center;
+    border: 1px solid #000;
+    border-radius: 3px;
+    padding: 1px 4px;
+    display: inline-block;
+    min-width: 18px;
+  }
+
+  .ticket-kitchen-notes {
+    border: 2px solid #000;
+    padding: 6px;
+    margin: 6px 0;
+    font-size: 12px;
+    font-weight: 900;
+    background: #eee;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .ticket-summary {
+    border-top: 2px solid #000;
+    padding-top: 5px;
+    margin-top: 5px;
+  }
+
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+
+  .total-row {
+    font-size: 15px;
+    font-weight: 900;
+    border-top: 1px dashed #000;
+    padding-top: 4px;
+    margin-top: 3px;
+  }
+
+  .ticket-footer {
+    text-align: center;
+    border-top: 1px dashed #000;
+    margin-top: 6px;
+    padding-top: 5px;
+    font-size: 10px;
+  }
+
+  .thank-you-msg {
+    font-weight: 900;
+    font-size: 11px;
+    margin-bottom: 2px;
+  }
+
+  @page {
+    size: auto;
+    margin: 0mm;
+  }
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(225, 29, 72, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(225, 29, 72, 0.8);
+  }
+}
+
+.pulse-glow {
+  animation: pulseGlow 2.5s infinite;
+}
+
+/* ===================================================================
+   Strict Vertical Stacking for Current Order Ticket Items
+   ترتيب أطعمة تذكرة الطلب الحالية كصفوف متتالية رأسياً (واحد فوق الآخر)
+   =================================================================== */
+#cashier-cart-items {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  white-space: normal !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  gap: 10px !important;
+}
+
+#cashier-cart-items > div {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: block !important;
+  white-space: normal !important;
+  box-sizing: border-box !important;
+}
+
+.pos-scroll-v::-webkit-scrollbar {
+  width: 5px;
+}
+.pos-scroll-v::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 9999px;
+}
+.pos-scroll-v::-webkit-scrollbar-thumb {
+  background: rgba(225, 29, 72, 0.5);
+  border-radius: 9999px;
+}
+

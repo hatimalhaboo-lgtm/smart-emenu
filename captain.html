@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>تطبيق كابتن الصالة الذكي | مطعم فحمة ودخان</title>
+  
+  <!-- PWA Configuration for Captain -->
+  <link rel="manifest" href="captain-manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="كابتن فحمة" />
+  <meta name="theme-color" content="#f59e0b" />
+  <link rel="apple-touch-icon" href="logo.svg" />
+
+  <!-- Tailwind CSS (Local Fallback + CDN) -->
+  <link rel="stylesheet" href="tailwind.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- التحقق الفوري والسريع من جلسة الكابتن قبل رسم الصفحة لمنع أي وميض أو تضارب -->
+  <script>
+    (function() {
+      try {
+        var restId = '';
+        var p = new URLSearchParams(window.location.search);
+        if (p.get('rest')) restId = p.get('rest').toLowerCase();
+        var keys = [
+          'smart_emenu_active_session',
+          'captain_session',
+          'smart_emenu_' + restId + '_session',
+          'smart_emenu_session',
+          'admin_session',
+          'smart_emenu_fahma_dokhan_session'
+        ];
+        // تحذير: هذا فحص محلي فقط — للحماية الحقيقية يجب التحقق من صحة الجلسة سحابياً عبر RPC
+        var isAuth = false;
+        for (var i = 0; i < keys.length; i++) {
+          var raw = sessionStorage.getItem(keys[i]) || localStorage.getItem(keys[i]);
+          if (raw) {
+            try {
+              var s = JSON.parse(raw);
+              if (s && (s.role === 'captain' || s.role === 'admin' || s.role === 'super_admin')) {
+                isAuth = true;
+                break;
+              }
+            } catch(e) {}
+          }
+        }
+        if (!isAuth && (sessionStorage.getItem('is_super_admin_logged_in') === 'true' || localStorage.getItem('is_super_admin_logged_in') === 'true')) {
+          isAuth = true;
+        }
+        if (!isAuth) {
+          window.location.replace('login.html?role=captain&rest=' + encodeURIComponent(restId));
+        }
+      } catch(e) {}
+    })();
+  </script>
+</head>
+<body class="bg-[#090d16] text-slate-100 min-h-screen">
+
+  <!-- ===================================================================
+       1. شاشة تسجيل دخول الكابتن (Clean Secure Login)
+       =================================================================== -->
+  <div id="captain-login-view" class="hidden min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+      
+      <div class="text-center space-y-2">
+        <div class="w-20 h-14 rounded-2xl bg-slate-950 p-2 mx-auto border border-slate-800 shadow-xl flex items-center justify-center">
+          <img src="logo.svg" alt="لوجو المطعم" class="w-full h-full object-contain restaurant-logo-img" />
+        </div>
+        <div>
+          <h2 class="text-xl font-black text-white">تسجيل دخول كابتن الصالة</h2>
+          <p class="text-xs text-slate-400 mt-0.5">أدخل بيانات الحساب للبدء في إدارة الطاولات والطلبات</p>
+        </div>
+      </div>
+
+      <!-- User & Password Form -->
+      <form id="captain-login-form" onsubmit="document.getElementById('captain-login-btn').disabled = true; handleCaptainLogin(event)" autocomplete="off" class="space-y-3 text-right">
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">اسم المستخدم:</label>
+          <input type="text" id="captain-username-input" name="username" autocomplete="off" placeholder="اسم المستخدم" class="w-full text-right text-sm font-bold bg-slate-950 border border-slate-700 text-white rounded-2xl py-3 px-4 focus:outline-none focus:border-rose-500" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">كلمة المرور:</label>
+          <div class="relative">
+            <input type="password" id="captain-pin-input" name="password" autocomplete="new-password" maxlength="32" placeholder="••••••••" class="w-full text-center tracking-[0.25em] text-xl font-black bg-slate-950 border border-slate-700 text-rose-400 rounded-2xl py-3 px-10 focus:outline-none focus:border-rose-500 font-mono" />
+            <button type="button" onclick="togglePasswordVisibility('captain-pin-input', this)" class="absolute left-3.5 top-3.5 text-slate-400 hover:text-white text-lg focus:outline-none" title="إظهار / إخفاء الرمز">
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <!-- Remember Me Checkbox -->
+        <div class="flex items-center justify-between py-1">
+          <label class="flex items-center gap-2 text-xs text-slate-300 font-bold cursor-pointer">
+            <input type="checkbox" id="captain-remember-me" class="w-4 h-4 accent-rose-600 rounded cursor-pointer" />
+            <span>حفظ اسم المستخدم وكلمة المرور 🔒</span>
+          </label>
+        </div>
+
+        <p id="captain-login-error" class="text-xs text-rose-500 font-bold hidden text-center"></p>
+
+        <button type="submit" id="captain-login-btn" class="w-full py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-600/30 transition active:scale-95">
+          تسجيل الدخول 🚀
+        </button>
+      </form>
+
+      <div class="pt-4 border-t border-slate-800 flex justify-between items-center text-xs text-slate-400">
+        <a href="index.html" class="hover:text-rose-400">← العودة لمنيو الزبائن</a>
+        <a href="cashier.html" class="text-emerald-400 hover:underline">لوحة الكاشير 💻</a>
+      </div>
+
+      <div class="pt-2 text-center border-t border-slate-800/60">
+        <span class="text-[11px] text-slate-400">📞 الدعم الفني: <a href="tel:07702265652" class="text-rose-400 font-bold font-mono hover:underline">07702265652</a></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       2. شاشة أخذ الطلبات للكابتن (Captain POS Workspace)
+       =================================================================== -->
+  <div id="captain-pos-view" class="hidden min-h-screen flex flex-col">
+    
+    <!-- Top Header -->
+    <header class="glass-header sticky top-0 z-40 px-3 sm:px-4 py-2.5 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shadow-lg flex-shrink-0">
+          <img src="logo.svg" alt="لوجو المطعم" class="w-full h-full object-contain restaurant-logo-img" />
+        </div>
+        <div class="min-w-0">
+          <div class="text-xs sm:text-sm font-black text-white truncate brand-restaurant-name" id="captain-restaurant-name">مطعم فحمة ودخان</div>
+          <div class="text-[10px] text-rose-400 font-bold flex items-center gap-1.5 mt-0.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+            <span>🤵 كابتن: <span class="text-white current-captain-name">الصالة</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        <!-- زر فتح السلة على الموبايل -->
+        <button onclick="toggleCaptainMobileCart()" class="lg:hidden py-2 px-3 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black rounded-xl shadow-lg transition flex items-center gap-1 active:scale-95">
+          <span>🛒</span>
+          <span id="captain-mobile-cart-badge" class="bg-white text-rose-600 text-[10px] font-black px-1.5 py-0.2 rounded-full">0</span>
+        </button>
+
+        <!-- إعدادات الطابعة -->
+        <button onclick="openPrinterSettingsModal()" class="py-2 px-2.5 sm:px-3 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-xl transition flex items-center gap-1 active:scale-95">
+          <span>🖨️</span>
+          <span class="hidden sm:inline">الطابعة</span>
+        </button>
+
+        <!-- خروج -->
+        <button onclick="logoutSession('captain.html')" class="py-2 px-2.5 bg-slate-900 hover:bg-rose-600 hover:text-white text-rose-400 text-xs font-bold rounded-xl border border-rose-500/30 transition flex items-center gap-1 active:scale-95">
+          <span>🚪</span>
+          <span class="hidden sm:inline">خروج</span>
+        </button>
+
+        <!-- زر القائمة --- -->
+        <button onclick="openCaptainMenuSidebar()"
+          title="القائمة والروابط"
+          class="w-9 h-9 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 hover:border-slate-600 text-slate-300 hover:text-white transition flex flex-col items-center justify-center gap-[4px] active:scale-95 flex-shrink-0">
+          <span class="block w-4 h-[2px] bg-current rounded-full"></span>
+          <span class="block w-4 h-[2px] bg-current rounded-full"></span>
+          <span class="block w-4 h-[2px] bg-current rounded-full"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Captain Menu Sidebar (---) -->
+    <div id="captain-menu-sidebar" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex justify-end" onclick="if(event.target===this)closePTSidebar()">
+      <div class="w-64 sm:w-72 bg-slate-900 h-full flex flex-col border-r border-slate-800 shadow-2xl overflow-y-auto">
+        <div class="flex items-center justify-between p-4 pb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="text-rose-500 text-base">☰</span>
+            <span class="text-slate-200 font-black text-sm">قائمة الكابتن</span>
+          </div>
+          <button onclick="closePTSidebar()" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-400 flex items-center justify-center text-xs font-bold transition">✕</button>
+        </div>
+        <div class="p-3 space-y-2 flex-1">
+          <button onclick="openPrinterSettingsModal();closePTSidebar()" class="w-full text-right py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition flex items-center gap-2">
+            <span>🖨️</span>
+            <span>إعدادات الطابعة الحرارية</span>
+          </button>
+          <a href="cashier.html" target="_blank" class="block py-2.5 px-3 bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold rounded-xl transition hover:bg-emerald-600 hover:text-white flex items-center gap-2">
+            <span>💼</span>
+            <span>فتح لوحة الكاشير</span>
+          </a>
+          <a href="index.html" target="_blank" class="block py-2.5 px-3 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition flex items-center gap-2">
+            <span>📖</span>
+            <span>منيو الزبائن</span>
+          </a>
+          <div class="border-t border-slate-800 pt-3 mt-3">
+            <a href="tel:07702265652" class="block py-2.5 px-3 bg-rose-600/10 border border-rose-500/20 text-rose-400 text-xs font-bold rounded-xl transition hover:bg-rose-600/20 flex items-center gap-2 justify-center">
+              <span>📞</span>
+              <span>دعم emattec: 07702265652</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main POS Workspace Layout -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 space-y-4">
+      
+      <!-- =========================================================
+           VIEW A: شاشة خريطة الصالة والطاولات (Tables Floor Plan View)
+           ========================================================= -->
+      <div id="captain-tables-view" class="space-y-4">
+        
+        <!-- Hall Summary Banner -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 class="text-sm sm:text-base font-black text-white flex items-center gap-2">
+              <span>🪑</span>
+              <span>خريطة طاولات الصالة</span>
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">انقر على أي طاولة متاحة لبدء طلب جديد، أو انقر على طاولة مشغولة لعرض كشف الحساب والمحاسبة</p>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span id="captain-stat-free" class="text-xs font-bold bg-slate-950 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl">
+              ⚪ 0 متاحة
+            </span>
+            <span id="captain-stat-busy" class="text-xs font-bold bg-amber-950/70 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-xl animate-pulse">
+              🟢 0 مشغولة
+            </span>
+          </div>
+        </div>
+
+        <!-- Grid of Hall Tables (كروت طاولات واضحة وكبيرة) -->
+        <div id="captain-tables-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <!-- تتولد كروت الطاولات من renderTablesGrid() -->
+        </div>
+
+        <!-- Hall Active Orders List at Bottom -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-base">🔔</span>
+              <h4 class="text-xs sm:text-sm font-black text-white">الطلبات الجارية في الصالة</h4>
+            </div>
+            <span id="captain-active-orders-count" class="text-xs bg-slate-800 text-rose-400 font-bold px-2.5 py-0.5 rounded-full">0 طلب</span>
+          </div>
+          
+          <div id="captain-orders-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <!-- الطلبات الجارية -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- =========================================================
+           VIEW B: شاشة أخذ الطلب للطاولة المحددة (Order Taking View)
+           ========================================================= -->
+      <div id="captain-order-view" class="hidden space-y-4">
+        
+        <!-- Navigation Header for Order Taking -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-3 sm:p-4 shadow-xl flex items-center justify-between gap-3">
+          <button type="button" onclick="closeCaptainOrderTakingView()" class="py-2 px-3 sm:px-4 bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-black rounded-2xl transition flex items-center gap-1.5 active:scale-95">
+            <span>←</span>
+            <span>رجوع للطاولات</span>
+          </button>
+
+          <div class="flex items-center gap-2">
+            <span id="captain-order-table-title" class="text-xs sm:text-sm font-black text-rose-400 bg-rose-500/20 border border-rose-500/30 px-3.5 py-1.5 rounded-2xl shadow-inner">
+              طلب طاولة رقم [ 1 ]
+            </span>
+            <!-- تحديد عدد الأشخاص (Headcount) -->
+            <div class="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-2xl border border-slate-800">
+              <span class="text-[11px] font-bold text-slate-400">👥 الأفراد:</span>
+              <button type="button" onclick="adjustCaptainGuests(-1)" class="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center justify-center active:scale-90">-</button>
+              <span id="captain-guests-count" class="w-6 text-center font-mono font-black text-amber-400 text-xs">2</span>
+              <button type="button" onclick="adjustCaptainGuests(1)" class="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center justify-center active:scale-90">+</button>
+            </div>
+          </div>
+
+          <div class="w-44 sm:w-64">
+            <input type="text" id="captain-search-input" placeholder="🔍 بحث عن وجبة..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-2xl py-2 px-3 focus:outline-none focus:border-rose-500" />
+          </div>
+        </div>
+
+        <!-- 1. Top Cart Panel: سلة الطلب أعلى المنيو لسرعة وسهولة الإرسال -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3">
+          
+          <div class="flex items-center justify-between pb-2.5 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🛒</span>
+              <h3 class="font-black text-white text-xs sm:text-sm">سلة الطلب الحالي</h3>
+              <span id="captain-cart-table-badge" class="text-[11px] font-bold text-rose-400 bg-rose-500/20 px-2 py-0.5 rounded-lg border border-rose-500/30">طاولة 1</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-1.5 bg-slate-950 px-3 py-1 rounded-xl border border-slate-800">
+                <span class="text-xs text-slate-400 font-bold">المجموع:</span>
+                <span id="captain-cart-total" class="text-sm sm:text-base font-black text-rose-400 font-mono">0 د.ع</span>
+              </div>
+              <button onclick="clearCaptainCart()" class="text-[11px] text-slate-400 hover:text-rose-400 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 transition">
+                تفريغ
+              </button>
+            </div>
+          </div>
+
+          <!-- Items List (Grid Layout for easy visibility) -->
+          <div id="captain-cart-items" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-36 overflow-y-auto">
+            <!-- عناصر السلة -->
+          </div>
+
+          <!-- Empty Cart Notice -->
+          <div id="captain-cart-empty" class="text-center py-3 text-slate-500 text-xs bg-slate-950/60 rounded-2xl border border-dashed border-slate-800">
+            🍽️ انقر على الوجبات بالأسفل لإضافتها للطلب
+          </div>
+
+          <!-- Quick Notes & Send Button -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-2.5 pt-2.5 border-t border-slate-800 items-center">
+            <div class="lg:col-span-8 space-y-1.5">
+              <div class="flex flex-wrap gap-1">
+                <button type="button" onclick="appendCaptainNote('بدون بصل')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">بدون بصل</button>
+                <button type="button" onclick="appendCaptainNote('حار زيادة 🌶️')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">حار زيادة</button>
+                <button type="button" onclick="appendCaptainNote('قليل ملح')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">قليل ملح</button>
+                <button type="button" onclick="appendCaptainNote('استواء كامل 🔥')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">استواء كامل</button>
+                <button type="button" onclick="appendCaptainNote('سرفيس إضافي 🥗')" class="text-[10px] bg-slate-950 hover:bg-rose-600 hover:text-white border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg transition font-bold">سرفيس زيادة</button>
+              </div>
+              <input type="text" id="captain-order-notes" placeholder="📝 ملاحظات مخصصة للطاهي..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl p-2.5 focus:outline-none focus:border-rose-500" />
+            </div>
+
+            <div class="lg:col-span-4">
+              <button onclick="submitCaptainOrder()" class="w-full py-3.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl shadow-rose-600/30 transition flex items-center justify-center gap-2 active:scale-95">
+                <span>إرسال للمطبخ وطباعة البون 🚀</span>
+                <span>🖨️</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 2. Categories & Sorting Bar (الفئات والفرز السريع) -->
+        <div class="space-y-2">
+          
+          <!-- Categories Bar -->
+          <div class="bg-slate-900/80 p-2 rounded-2xl border border-slate-800">
+            <div class="category-scroll py-0.5 overflow-x-auto flex gap-1.5" id="captain-categories-bar">
+              <!-- أزرار الفئات -->
+            </div>
+          </div>
+
+          <!-- Sorting & Filter Chips (فرز الأصناف) -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex items-center gap-1.5 overflow-x-auto">
+            <span class="text-[11px] font-black text-slate-400 flex-shrink-0">🔄 فرز الأصناف:</span>
+            <button type="button" onclick="setCaptainSort('default')" id="btn-cap-sort-default" class="sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-rose-600 text-white shadow-md shadow-rose-600/30">الافتراضي ⭐</button>
+            <button type="button" onclick="setCaptainSort('price-asc')" id="btn-cap-sort-price-asc" class="sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-slate-950 text-slate-400 hover:bg-slate-800">الأقل سعراً ⬇️</button>
+            <button type="button" onclick="setCaptainSort('price-desc')" id="btn-cap-sort-price-desc" class="sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-slate-950 text-slate-400 hover:bg-slate-800">الأعلى سعراً ⬆️</button>
+            <button type="button" onclick="setCaptainSort('name-asc')" id="btn-cap-sort-name-asc" class="sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-slate-950 text-slate-400 hover:bg-slate-800">أبجدي (أ - ي) 🔤</button>
+            <button type="button" onclick="toggleCaptainAvailableOnly()" id="btn-cap-filter-avail" class="sort-chip text-[10px] font-bold px-2.5 py-1 rounded-xl transition whitespace-nowrap bg-slate-950 text-slate-400 hover:bg-slate-800">المتوفر فقط ✅</button>
+          </div>
+
+        </div>
+
+        <!-- 3. Dishes Grid (بلاطات غنية بتفاصيل الأطباق) -->
+        <div id="captain-dishes-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5">
+          <!-- كروت الأصناف الغنية بالتفاصيل -->
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Modal: كشف حساب وإدارة الطاولة المشغولة للكابتن -->
+  <div id="active-table-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
+      
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold">🪑</div>
+          <div>
+            <h4 id="atm-table-title" class="text-sm sm:text-base font-black text-white">طاولة رقم [ 1 ] - مشغولة 🟢</h4>
+            <p id="atm-order-meta" class="text-[11px] text-slate-400">#ORD-0000 • 🕒 00:00</p>
+          </div>
+        </div>
+        <button onclick="closeActiveTableModal()" class="w-7 h-7 bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white rounded-full flex items-center justify-center text-xs font-bold transition">✕</button>
+      </div>
+
+      <!-- Items List Container -->
+      <div class="space-y-2">
+        <div class="text-xs font-bold text-slate-400">الوجبات والطلبات الحالية:</div>
+        <div id="atm-items-list" class="space-y-1.5 max-h-52 overflow-y-auto bg-slate-950 p-2.5 rounded-2xl border border-slate-800">
+          <!-- تتولد الوجبات هنا -->
+        </div>
+      </div>
+
+      <!-- Notes if any -->
+      <div id="atm-notes-box" class="hidden text-xs text-amber-300 bg-amber-950/40 p-2.5 rounded-xl border border-amber-500/30 font-bold">
+        📝 ملاحظة: <span id="atm-notes-text"></span>
+      </div>
+
+      <!-- Total Bill -->
+      <div class="flex justify-between items-center bg-slate-950 p-3 rounded-2xl border border-slate-800">
+        <span class="text-xs text-slate-400 font-bold">المجموع الكلي المطلوب:</span>
+        <span id="atm-total-price" class="text-lg font-black text-rose-400 font-mono">0 د.ع</span>
+      </div>
+
+      <!-- 3 Action Buttons -->
+      <div class="space-y-2 pt-2 border-t border-slate-800">
+        <!-- 1. إضافة طلبات جديدة -->
+        <button type="button" onclick="addMoreItemsToActiveTable()" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-xs font-black rounded-xl transition flex items-center justify-center gap-2 active:scale-95">
+          <span>➕</span>
+          <span>إضافة وجبات / مشروبات إضافية لنفس الطاولة</span>
+        </button>
+
+        <!-- 2. طباعة البون للمطبخ أو الحساب للزبون (منفصلين) -->
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" onclick="printActiveTableKitchenTicket()" class="py-2.5 px-3 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white border border-rose-500/40 text-xs font-black rounded-xl transition flex items-center justify-center gap-1.5 active:scale-95" title="طباعة بون المطبخ على طابعة 101">
+            <span>👨‍🍳</span>
+            <span>بون المطبخ (101)</span>
+          </button>
+          <button type="button" onclick="printActiveTableBill()" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 text-xs font-black rounded-xl transition flex items-center justify-center gap-1.5 active:scale-95" title="طباعة فاتورة الحساب على طابعة 100">
+            <span>🧾</span>
+            <span>فاتورة الحساب (100)</span>
+          </button>
+        </div>
+
+        <!-- 3. محاسبة وتفريغ الطاولة -->
+        <button type="button" onclick="closeAndPayActiveTable()" class="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white text-xs sm:text-sm font-black rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95">
+          <span>💵</span>
+          <span>محاسبة وإغلاق الفاتورة وتفريغ الطاولة ✅</span>
+        </button>
+
+        <!-- 4. إلغاء وحذف طلب الطاولة بالكامل -->
+        <button type="button" onclick="cancelAndVoidActiveTable()" class="w-full py-2.5 px-4 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-500/30 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 active:scale-95">
+          <span>❌</span>
+          <span>إلغاء الطلب وتفريغ الطاولة نهائياً (حذف)</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Thermal Kitchen Print Ticket -->
+  <div id="kitchen-print-ticket"></div>
+
+  <!-- Cloud Database CDN & Scripts -->
+  <script src="env-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="auth-core.js?v=6.1"></script>
+  <script src="bundle-captain.js?v=6.1"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('sw.js').catch(function() {});
+      });
+    }
+  </script>
+</body>
+</html>

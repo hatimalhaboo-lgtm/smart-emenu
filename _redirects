@@ -1,0 +1,18 @@
+# صفحات التطبيق العامة لنظام المطعم الواحد
+/              /index.html         200
+/menu          /index.html         200
+/login         /login.html         200
+/admin         /admin.html         200
+/cashier       /cashier.html       200
+/captain       /captain.html       200
+/driver        /driver.html        200
+/super-admin   /super-admin.html   200
+
+# السماح لملف PWA Manifest
+/manifest.json /manifest.json      200
+
+# حماية الملفات الحساسة
+/backup*.json                          /404.html  404
+/supabase_schema.sql                   /404.html  404
+/scratch*.js                           /404.html  404
+/*.sql                                 /404.html  404

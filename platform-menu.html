@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>منصة بنان الذكية | سوق المأكولات الرقمي</title>
+  <meta name="description" content="منصة وسوق بنان الرقمي الموحد لأشهى الأطباق والمأكولات المتفق عليها من أفضل المطاعم المعتمدة" />
+  <meta name="theme-color" content="#0b1120" />
+  
+  <!-- Manifest -->
+  <link rel="manifest" href="manifest.json" />
+  
+  <!-- Tailwind CSS (Local Fallback + CDN) -->
+  <link rel="stylesheet" href="tailwind.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fff7ed',
+              100: '#ffedd5',
+              500: '#f97316',
+              600: '#ea580c',
+              700: '#c2410c',
+              900: '#7c2d12',
+            },
+            navy: {
+              800: '#1e293b',
+              900: '#0f172a',
+              950: '#0b1120'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts & Styles -->
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .market-card {
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .market-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 16px 30px -10px rgba(234, 88, 12, 0.25);
+      border-color: rgba(234, 88, 12, 0.5);
+    }
+    .chip-btn.active {
+      background: linear-gradient(135deg, #ea580c, #c2410c);
+      color: #ffffff;
+      border-color: #ea580c;
+      box-shadow: 0 4px 14px rgba(234, 88, 12, 0.35);
+    }
+  </style>
+</head>
+<body class="bg-[#0b1120] text-slate-100 antialiased selection:bg-orange-500 selection:text-white min-h-screen flex flex-col">
+
+  <!-- ===================================================================
+       1. شريط التنقل العلوي للمنصة (Platform Header)
+       =================================================================== -->
+  <header class="sticky top-0 z-40 glass-header border-b border-slate-800/80 bg-[#0b1120]/95 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-3">
+      
+      <!-- شعار وعنوان منصة بنان الموحدة -->
+      <div class="flex items-center gap-3 cursor-pointer min-w-0" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+        <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-black border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-black/60 flex-shrink-0 overflow-hidden">
+          <img src="banan-logo.jpg" alt="منصة بنان" class="w-full h-full object-contain rounded-xl" onerror="this.src='logo.svg'" />
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm sm:text-base font-black text-white leading-tight truncate">منصة بنان الذكية</h1>
+            <span class="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[10px] font-black px-2 py-0.5 rounded-full hidden sm:inline-block">Banan Platform</span>
+          </div>
+          <p class="text-[10px] text-slate-400 font-bold truncate">سوق المأكولات الرقمي الموحد لأشهى مطاعم المنظومة</p>
+        </div>
+      </div>
+
+      <!-- أزرار الإجراءات السريعة والسلة -->
+      <div class="flex items-center gap-2">
+        <!-- زر السلة -->
+        <button onclick="openMarketCart()" id="market-cart-btn"
+          class="py-2 px-3 sm:px-4 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-xl shadow-lg shadow-orange-600/25 transition flex items-center gap-2 active:scale-95">
+          <span class="text-base">🛒</span>
+          <span class="hidden sm:inline font-bold">السلة</span>
+          <span id="market-cart-count" class="bg-black/40 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full leading-none">0</span>
+          <span id="market-cart-total" class="font-mono text-xs hidden md:inline">0 د.ع</span>
+        </button>
+
+        <!-- زر تواصل الدعم -->
+        <a href="https://wa.me/9647702265652" target="_blank" title="دعم المنصة المباشر" class="p-2 sm:px-3 sm:py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+          <span>💬</span>
+          <span class="hidden sm:inline text-[11px]">مساعدة</span>
+        </a>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ===================================================================
+       2. قسم الترحيب والبحث السريع (Hero Banner & Search)
+       =================================================================== -->
+  <section class="max-w-7xl mx-auto px-4 pt-6 pb-2 w-full space-y-4">
+    <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-orange-950/30 to-slate-900 border border-slate-800 p-5 sm:p-7 shadow-2xl">
+      <div class="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+        
+        <div class="space-y-2 text-center md:text-right max-w-xl">
+          <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-600/20 border border-orange-500/30 text-orange-400 text-xs font-black rounded-full">
+            <span>🌟 الأصناف المعتمدة بأسعار خاصة</span>
+          </div>
+          <h2 class="text-xl sm:text-2xl font-black text-white leading-snug">اطلب وجباتك المفضلة من نخبة مطاعم المنصة في مكان واحد</h2>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            استمتع بأشهى المشاوي، المعجنات، البرجر، والوجبات الغربية بأسعار موحدة ومتفق عليها مع ضمان الجودة وسرعة التوصيل.
+          </p>
+        </div>
+
+        <!-- حقل البحث الذكي -->
+        <div class="w-full md:w-80">
+          <div class="relative">
+            <input type="search" id="market-search-input" oninput="filterMarketDishes()" placeholder="ابحث عن طبق أو مطعم معين..." 
+              class="w-full bg-slate-950 text-white placeholder-slate-500 text-xs sm:text-sm rounded-2xl py-3 px-4 pl-10 pr-10 border border-slate-700 focus:border-orange-500 focus:outline-none transition shadow-inner font-bold" />
+            <span class="absolute left-3.5 top-3 text-slate-400 text-sm pointer-events-none">🔍</span>
+            <button type="button" id="market-search-clear" onclick="clearMarketSearch()" class="hidden absolute right-3.5 top-3 w-5 h-5 rounded-full bg-slate-800 hover:bg-orange-600 text-slate-300 text-xs flex items-center justify-center transition">✕</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         3. فلاتر المطاعم المشاركة (Filter by Restaurant)
+         =================================================================== -->
+    <div class="space-y-2 pt-2">
+      <div class="flex items-center justify-between text-xs text-slate-400 font-bold px-1">
+        <span class="flex items-center gap-1.5 text-white">
+          <span>🏢</span>
+          <span>المطاعم المشاركة:</span>
+        </span>
+        <span id="participating-restaurants-count" class="text-[11px] font-mono text-orange-400">2 مطعم</span>
+      </div>
+      <div id="restaurant-chips-bar" class="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin">
+        <button onclick="filterByRestaurant('all')" id="rest-chip-all" class="chip-btn active px-4 py-2 rounded-xl text-xs font-black bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700 transition flex items-center gap-2 whitespace-nowrap shrink-0">
+          <span>🍽️ جميع المطاعم</span>
+        </button>
+        <!-- سيتم ملء بقية المطاعم ديناميكياً -->
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         4. فلاتر أقسام المأكولات (Filter by Category)
+         =================================================================== -->
+    <div class="flex gap-2 overflow-x-auto pb-1 text-xs">
+      <button onclick="filterByCategory('all')" id="cat-chip-all" class="chip-btn active px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition whitespace-nowrap shrink-0">الكل</button>
+      <button onclick="filterByCategory('grills')" id="cat-chip-grills" class="chip-btn px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition whitespace-nowrap shrink-0">🥩 المشاوي والكباب</button>
+      <button onclick="filterByCategory('pastry')" id="cat-chip-pastry" class="chip-btn px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition whitespace-nowrap shrink-0">🍕 المعجنات واللحم بعجين</button>
+      <button onclick="filterByCategory('burgers')" id="cat-chip-burgers" class="chip-btn px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition whitespace-nowrap shrink-0">🍔 البركر والوجبات السريعة</button>
+      <button onclick="filterByCategory('chicken')" id="cat-chip-chicken" class="chip-btn px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition whitespace-nowrap shrink-0">🍗 الدجاج والمناسف</button>
+      <button onclick="filterBySpecial('offers')" id="cat-chip-offers" class="chip-btn px-3.5 py-1.5 rounded-xl bg-slate-900 border border-rose-500/40 text-rose-300 hover:bg-slate-800 transition whitespace-nowrap shrink-0 font-bold">🏷️ عروض وتخفيضات</button>
+      <button onclick="filterBySpecial('free_delivery')" id="cat-chip-free" class="chip-btn px-3.5 py-1.5 rounded-xl bg-slate-900 border border-emerald-500/40 text-emerald-300 hover:bg-slate-800 transition whitespace-nowrap shrink-0 font-bold">🛵 توصيل مجاني</button>
+      <button onclick="filterByCategory('drinks')" id="cat-chip-drinks" class="chip-btn px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition whitespace-nowrap shrink-0">🥤 المشروبات والمقبلات</button>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       5. شبكة أطباق المنصة (Platform Dishes Grid)
+       =================================================================== -->
+  <main class="flex-1 max-w-7xl mx-auto px-4 py-4 w-full">
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-orange-500 animate-ping"></span>
+        <h3 class="text-sm sm:text-base font-black text-white" id="market-section-title">الأطباق المتاحة للطلب الفوري</h3>
+      </div>
+      <span id="market-dishes-count-badge" class="text-xs text-slate-400 font-bold bg-slate-900 border border-slate-800 py-1.5 px-3 rounded-xl font-mono">
+        0 صنف
+      </span>
+    </div>
+
+        <!-- شريط استعراض منيو المطعم المحدد -->
+    <div id="active-restaurant-banner" class="hidden mb-4 p-3.5 sm:p-4 bg-gradient-to-r from-orange-950/70 via-slate-900 to-slate-900 border border-orange-500/40 rounded-2xl sm:rounded-3xl flex flex-wrap items-center justify-between gap-3 shadow-xl">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-orange-600/20 border border-orange-500/40 flex items-center justify-center text-xl flex-shrink-0">
+          🏢
+        </div>
+        <div>
+          <div class="text-[11px] text-orange-400 font-bold">أنت تستعرض الآن أصناف:</div>
+          <h4 id="active-restaurant-banner-name" class="text-sm sm:text-base font-black text-white leading-tight"></h4>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] text-slate-400 font-bold bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800 hidden sm:inline-block">✅ الأسعار معتمدة لمنصة بنان</span>
+        <button type="button" onclick="filterByRestaurant('all')" class="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs rounded-xl border border-slate-700 transition flex items-center gap-1">
+          <span>استعراض كافة المطاعم ✕</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- شبكة الأصناف -->
+    <div id="market-dishes-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+      <!-- تحميل هيكلي فوري (Skeleton) -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-3.5 space-y-3 animate-pulse">
+        <div class="w-full h-40 bg-slate-800/80 rounded-2xl"></div>
+        <div class="h-4 bg-slate-800 rounded-full w-3/4"></div>
+        <div class="h-3 bg-slate-800/60 rounded-full w-1/2"></div>
+      </div>
+      <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-3.5 space-y-3 animate-pulse">
+        <div class="w-full h-40 bg-slate-800/80 rounded-2xl"></div>
+        <div class="h-4 bg-slate-800 rounded-full w-3/4"></div>
+        <div class="h-3 bg-slate-800/60 rounded-full w-1/2"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================================================================
+       6. درج سلة المشتريات والطلب (Shopping Cart Drawer)
+       =================================================================== -->
+  <div id="market-cart-drawer" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex justify-end transition">
+    <div class="w-full max-w-md bg-slate-900 h-full flex flex-col border-r border-slate-800 shadow-2xl overflow-y-auto">
+      
+      <!-- رأس السلة -->
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-slate-900/95 backdrop-blur-md z-10">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">🛒</span>
+          <div>
+            <h3 class="font-black text-sm text-white">سلة طلبات المنصة</h3>
+            <p class="text-[10px] text-slate-400">الطلب محدد بمطعم واحد لضمان أجور توصيل موحدة</p>
+          </div>
+        </div>
+        <button onclick="closeMarketCart()" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition">✕</button>
+      </div>
+
+      <!-- محتويات السلة -->
+            <!-- شريط المطعم المخصص له الطلب الحالي -->
+      <div id="cart-single-rest-bar" class="hidden mx-4 mt-3 p-3 bg-orange-950/60 border border-orange-500/50 rounded-2xl flex items-center justify-between text-xs shadow-md">
+        <div class="flex items-center gap-2">
+          <span class="text-base">🏢</span>
+          <div>
+            <div class="text-[10px] text-orange-400 font-bold">الطلب محصور بالمطعم:</div>
+            <div id="cart-single-rest-name" class="font-black text-white text-xs sm:text-sm"></div>
+          </div>
+        </div>
+        <span class="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold px-2 py-1 rounded-xl">🛵 أجور نقل واحدة</span>
+      </div>
+
+      <div class="flex-1 p-4 space-y-3 overflow-y-auto" id="market-cart-items-container">
+        <!-- تتولد الأصناف هنا -->
+      </div>
+
+      <!-- ملخص الحساب ونموذج الزبون -->
+      <div class="p-4 border-t border-slate-800 bg-slate-950/80 space-y-4">
+        
+        <!-- ملخص المجموع -->
+        <div class="bg-slate-900 p-3 rounded-2xl border border-slate-800 space-y-2 text-xs">
+          <div class="flex justify-between text-slate-400">
+            <span>مجموع الأصناف:</span>
+            <span id="market-cart-subtotal" class="font-mono font-bold text-white">0 د.ع</span>
+          </div>
+          <div class="flex justify-between text-slate-400">
+            <span>رسوم التوصيل والخدمة:</span>
+            <span class="text-emerald-400 font-bold">حسب المنطقة</span>
+          </div>
+          <div class="pt-2 border-t border-slate-800 flex justify-between items-center text-sm font-black text-white">
+            <span>المبلغ الإجمالي:</span>
+            <span id="market-cart-final-total" class="font-mono text-orange-400 text-base">0 د.ع</span>
+          </div>
+        </div>
+
+        <!-- حقول بيانات الزبون -->
+        <div class="space-y-2.5">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 mb-1">👤 اسم الزبون الكريم *</label>
+            <input type="text" id="market-order-customer-name" placeholder="أدخل اسمك الكريم..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-orange-500 focus:outline-none" />
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 mb-1">📱 رقم الهاتف للتواصل والواتساب *</label>
+            <input type="tel" id="market-order-customer-phone" placeholder="07XXXXXXXXX" dir="ltr" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-orange-500 focus:outline-none font-mono text-right" />
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 mb-1">🛵 نوع الاستلام</label>
+            <select id="market-order-type" onchange="toggleMarketAddressField()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-orange-500 focus:outline-none font-bold">
+              <option value="delivery">توصيل إلى العنوان (Delivery)</option>
+              <option value="takeaway">استلام مباشر سفري من المطعم</option>
+            </select>
+          </div>
+
+          <div id="market-order-address-wrapper">
+            <label class="block text-[11px] font-bold text-slate-300 mb-1">📍 عنوان التوصيل بالتفصيل *</label>
+            <input type="text" id="market-order-customer-address" placeholder="المدينة، الحي، أقرب نقطة دالة..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-orange-500 focus:outline-none" />
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 mb-1">📝 ملاحظات إضافية (اختياري)</label>
+            <input type="text" id="market-order-notes" placeholder="بدون بصل، مايونيز إضافي، توقيت الاستلام..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-orange-500 focus:outline-none" />
+          </div>
+        </div>
+
+        <!-- زر تأكيد وإرسال الطلب -->
+        <button onclick="submitMarketOrder()" id="market-submit-order-btn" class="w-full py-3 px-4 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-black text-sm rounded-2xl shadow-xl shadow-orange-600/30 transition flex items-center justify-center gap-2 active:scale-95">
+          <span>🚀 تأكيد وإرسال الطلب الآن</span>
+        </button>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       7. نافذة تأكيد الطلب بنجاح (Order Success Modal)
+       =================================================================== -->
+  <div id="market-success-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="max-w-md w-full bg-slate-900 border border-emerald-500/40 rounded-3xl p-6 text-center space-y-4 shadow-2xl">
+      <div class="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center text-3xl mx-auto">
+        ✅
+      </div>
+      <div>
+        <h3 class="text-lg font-black text-white">تم استلام طلبك بنجاح!</h3>
+        <p class="text-xs text-slate-300 mt-1">تم توجيه طلبك إلى المطعم الموفر وإدارة المنصة لتجهيزه فورياً.</p>
+      </div>
+
+      <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs space-y-1.5 text-right font-mono">
+        <div class="flex justify-between"><span class="text-slate-400">رقم الطلب:</span><span id="success-order-id" class="text-orange-400 font-bold"></span></div>
+        <div class="flex justify-between"><span class="text-slate-400">إجمالي المبلغ:</span><span id="success-order-total" class="text-emerald-400 font-bold"></span></div>
+        <div class="flex justify-between"><span class="text-slate-400">طريقة الاستلام:</span><span id="success-order-type" class="text-white font-bold"></span></div>
+      </div>
+
+      <div class="flex flex-col gap-2 pt-2">
+        <a id="success-whatsapp-btn" href="#" target="_blank" class="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+          <span>💬 فتح محادثة الواتساب ومتابعة الطلب</span>
+        </a>
+        <button onclick="closeSuccessModal()" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition">
+          العودة للمنيو والتسوق
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- تذييل المنصة -->
+  <footer class="mt-auto py-6 border-t border-slate-800 bg-slate-950 text-center text-xs text-slate-400 space-y-1">
+    <div>نظام سوق المنصة الذكي • تطوير وبرمجة <b class="text-white">مكتب emattec للأنظمة الذكية</b> (07702265652)</div>
+    <div class="text-[10px] text-slate-500">جميع الحقوق محفوظة © 2026</div>
+  </footer>
+
+  <!-- ===================================================================
+       8. سكريبت المنصة الذكي
+       =================================================================== -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const DEFAULT_SUPABASE_URL = "https://rdvtdddggrrataihsobm.supabase.co";
+    const DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkdnRkZGRnZ3JyYXRhaWhzb2JtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3MjI5NjcsImV4cCI6MjEwNDI5ODk2N30.fVohEQLWECDkiDBns0wjQnVZsU8XDvl8V2odpASy53k";
+
+    function getSupabase() {
+      if (window._sbClient) return window._sbClient;
+      const url = localStorage.getItem('smart_emenu_supabase_url') || DEFAULT_SUPABASE_URL;
+      const key = localStorage.getItem('smart_emenu_supabase_anon_key') || DEFAULT_SUPABASE_ANON_KEY;
+      if (window.supabase && typeof window.supabase.createClient === 'function') {
+        window._sbClient = window.supabase.createClient(url, key);
+        return window._sbClient;
+      }
+      return null;
+    }
+
+    // الأصناف المتفق عليها مبدئياً للمنصة (Seed Dishes)
+    const INITIAL_PLATFORM_DISHES = [
+      {
+        id: "plt_fd_101",
+        restaurantId: "fahma_dokhan",
+        restaurantName: "مطعم فحمة ودخان",
+        categoryId: "grills",
+        name: "نفر كباب لحم مشوي على الفحم",
+        nameEn: "Charcoal Grilled Beef Kebab",
+        description: "لحم غنم عراقي طازج مفروم مع لية الغنم، مشوي على الجمر يقدم مع الخبز الحار والسرفيس.",
+        originalPrice: 8000,
+        platformPrice: 9000,
+        commissionType: "fixed",
+        commissionValue: 1000,
+        commissionAmount: 1000,
+        restaurantNet: 8000,
+        image: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=600&q=80",
+        isActive: true
+      },
+      {
+        id: "plt_hd_101",
+        restaurantId: "haidouri",
+        restaurantName: "لحم بعجين حيدوري",
+        categoryId: "pastry",
+        name: "لحم بعجين حيدوري كلاسيك بالفرن الحجري",
+        nameEn: "Classic Haidouri Lahm Bi Ajeen",
+        description: "عجين رقيق مقرمش بالفرن الحجري مغطى بخلطة اللحم البلدي والطماطم ودبس الرمان.",
+        originalPrice: 1500,
+        platformPrice: 1750,
+        commissionType: "fixed",
+        commissionValue: 250,
+        commissionAmount: 250,
+        restaurantNet: 1500,
+        image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80",
+        isActive: true
+      },
+      {
+        id: "plt_hd_102",
+        restaurantId: "haidouri",
+        restaurantName: "لحم بعجين حيدوري",
+        categoryId: "pastry",
+        name: "لحم بعجين بالجبن والموزاريلا",
+        nameEn: "Lahm Bi Ajeen with Mozzarella",
+        description: "لحم بعجين محشو باللحم ومغطى بطبقة سخية من جبن الموزاريلا والقشقوان الذائب.",
+        originalPrice: 2000,
+        platformPrice: 2500,
+        commissionType: "fixed",
+        commissionValue: 500,
+        commissionAmount: 500,
+        restaurantNet: 2000,
+        image: "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=600&q=80",
+        isActive: true
+      },
+      {
+        id: "plt_fd_207",
+        restaurantId: "fahma_dokhan",
+        restaurantName: "مطعم فحمة ودخان",
+        categoryId: "chicken",
+        name: "دجاجة كاملة مشوية على الفحم",
+        nameEn: "Whole Charcoal Grilled Chicken",
+        description: "دجاجة كاملة متبلة ببهارات الفحم والليمون والزعفران، تقدم مع الخبز والطرشي والثومية.",
+        originalPrice: 8000,
+        platformPrice: 9000,
+        commissionType: "percentage",
+        commissionValue: 12.5,
+        commissionAmount: 1000,
+        restaurantNet: 8000,
+        image: "https://images.unsplash.com/photo-1532550907401-a500c9a57435?auto=format&fit=crop&w=600&q=80",
+        isActive: true
+      },
+      {
+        id: "plt_fd_302",
+        restaurantId: "fahma_dokhan",
+        restaurantName: "مطعم فحمة ودخان",
+        categoryId: "burgers",
+        name: "بركر لحم دبل بالجبن والصوص الخاص",
+        nameEn: "Double Beef Cheeseburger",
+        description: "شريحتين لحم بقري بلدي مشوي مع شرائح الجبن الشيدر، الخس، المخلل وصوص الشيف.",
+        originalPrice: 2500,
+        platformPrice: 3000,
+        commissionType: "fixed",
+        commissionValue: 500,
+        commissionAmount: 500,
+        restaurantNet: 2500,
+        image: "https://images.unsplash.com/photo-1586190848861-99aa4a171e90?auto=format&fit=crop&w=600&q=80",
+        isActive: true
+      },
+      {
+        id: "plt_hd_106",
+        restaurantId: "haidouri",
+        restaurantName: "لحم بعجين حيدوري",
+        categoryId: "drinks",
+        name: "شنينة أربيلية مثلجة بالنعناع",
+        nameEn: "Fresh Ayran Shanina with Mint",
+        description: "لبن عيران طبيعي بارد ومثلج مع رشة نعناع مجفف وملح خفيف منعش.",
+        originalPrice: 1000,
+        platformPrice: 1250,
+        commissionType: "fixed",
+        commissionValue: 250,
+        commissionAmount: 250,
+        restaurantNet: 1000,
+        image: "https://images.unsplash.com/photo-1584947914532-26113214578f?auto=format&fit=crop&w=600&q=80",
+        isActive: true
+      }
+    ];
+
+    let platformDishes = [];
+    let marketCart = [];
+    let currentRestFilter = 'all';
+    let currentCatFilter = 'all';
+    let currentSearch = '';
+    let restaurantStatusMap = {};
+
+    // تهيئة الصفحة عند التحميل
+    document.addEventListener('DOMContentLoaded', async () => {
+      loadCartFromStorage();
+      await loadPlatformDishes();
+      renderRestaurantChips();
+      renderMarketDishes();
+    });
+
+    // جلب الأصناف وحالة المطاعم من التخزين السحابي أو المحلي
+    async function loadPlatformDishes() {
+      // فحص التخزين المحلي أولاً
+      const localData = localStorage.getItem('smart_emenu_platform_market_dishes');
+      if (localData) {
+        try {
+          platformDishes = JSON.parse(localData);
+        } catch(e) {
+          platformDishes = INITIAL_PLATFORM_DISHES;
+        }
+      } else {
+        platformDishes = INITIAL_PLATFORM_DISHES;
+        localStorage.setItem('smart_emenu_platform_market_dishes', JSON.stringify(platformDishes));
+      }
+
+      // محاولة المزامنة مع Supabase
+      const client = getSupabase();
+      if (client) {
+        try {
+          // جلب حالة المطاعم المشتركة للتأكد إن كان المطعم مفتوحاً أو مغلقاً
+          const { data: restsData } = await client
+            .from('restaurants')
+            .select('id, name, is_active');
+          if (restsData && Array.isArray(restsData)) {
+            restsData.forEach(r => {
+              restaurantStatusMap[r.id] = {
+                isActive: r.is_active !== false,
+                name: r.name
+              };
+            });
+          }
+
+          const { data, error } = await client
+            .from('restaurant_dishes')
+            .select('*')
+            .in('restaurant_id', ['banan', 'platform_market']);
+
+          if (!error && Array.isArray(data) && data.length > 0) {
+            const cloudDishes = data.map(d => {
+              let meta = {};
+              try { meta = JSON.parse(d.ingredients || '{}'); } catch(e){}
+              return {
+                id: d.id,
+                restaurantId: meta.origin_restaurant_id || 'general',
+                restaurantName: d.badge || 'مطعم معتمد',
+                categoryId: d.category_id || 'grills',
+                name: d.name,
+                nameEn: d.name_en || '',
+                description: d.description || '',
+                originalPrice: Number(d.old_price) || Number(d.price) || 0,
+                platformPrice: Number(d.price) || 0,
+                commissionType: meta.commission_type || 'percentage',
+                commissionValue: Number(meta.commission_value) || 10,
+                commissionAmount: Number(meta.commission_amount) || 0,
+                restaurantNet: Number(meta.restaurant_net) || Number(d.old_price) || 0,
+                image: d.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600',
+                isActive: d.is_available !== false
+              };
+            });
+            if (cloudDishes.length > 0) {
+              platformDishes = cloudDishes;
+              localStorage.setItem('smart_emenu_platform_market_dishes', JSON.stringify(platformDishes));
+            }
+          }
+        } catch(e) {
+          console.warn("Notice: Using local platform dishes:", e);
+        }
+      }
+    }
+
+    // رسم أزرار فلاتر المطاعم المشاركة
+    function renderRestaurantChips() {
+      const container = document.getElementById('restaurant-chips-bar');
+      if (!container) return;
+
+      const restMap = {};
+      platformDishes.forEach(d => {
+        if (d.restaurantId && d.restaurantName) {
+          restMap[d.restaurantId] = d.restaurantName;
+        }
+      });
+
+      const restIds = Object.keys(restMap);
+      const badgeCount = document.getElementById('participating-restaurants-count');
+      if (badgeCount) badgeCount.textContent = `${restIds.length} مطاعم`;
+
+      let html = `
+        <button onclick="filterByRestaurant('all')" id="rest-chip-all" class="chip-btn ${currentRestFilter === 'all' ? 'active' : ''} px-4 py-2 rounded-xl text-xs font-black bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700 transition flex items-center gap-2 whitespace-nowrap shrink-0">
+          <span>🍽️ جميع المطاعم</span>
+        </button>
+      `;
+
+      restIds.forEach(rId => {
+        const rName = restMap[rId];
+        const isActive = currentRestFilter === rId;
+        html += `
+          <button onclick="filterByRestaurant('${rId}')" id="rest-chip-${rId}" class="chip-btn ${isActive ? 'active' : ''} px-4 py-2 rounded-xl text-xs font-black bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700 transition flex items-center gap-2 whitespace-nowrap shrink-0">
+            <span>🏷️ ${rName}</span>
+          </button>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+        let currentSpecialFilter = 'all';
+
+    function filterBySpecial(type) {
+      currentSpecialFilter = type;
+      currentCatFilter = 'all';
+      document.querySelectorAll('.chip-btn[id^="cat-chip-"]').forEach(btn => btn.classList.remove('active'));
+      const btn = document.getElementById(type === 'offers' ? 'cat-chip-offers' : (type === 'free_delivery' ? 'cat-chip-free' : 'cat-chip-all'));
+      if (btn) btn.classList.add('active');
+      renderMarketDishes();
+    }
+
+    function filterByRestaurant(rId) {
+      currentRestFilter = rId;
+      document.querySelectorAll('#restaurant-chips-bar .chip-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById(rId === 'all' ? 'rest-chip-all' : `rest-chip-${rId}`);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      // تحديث شريط المطعم النشط أعلى المنيو
+      const banner = document.getElementById('active-restaurant-banner');
+      const bannerName = document.getElementById('active-restaurant-banner-name');
+      if (banner && bannerName) {
+        if (rId === 'all') {
+          banner.classList.add('hidden');
+        } else {
+          const matchDish = platformDishes.find(d => d.restaurantId === rId);
+          bannerName.textContent = matchDish ? matchDish.restaurantName : rId;
+          banner.classList.remove('hidden');
+        }
+      }
+      renderMarketDishes();
+    }
+
+    function filterByCategory(catId) {
+      currentCatFilter = catId;
+      document.querySelectorAll('.chip-btn[id^="cat-chip-"]').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById(`cat-chip-${catId}`);
+      if (activeBtn) activeBtn.classList.add('active');
+      renderMarketDishes();
+    }
+
+    function filterMarketDishes() {
+      const input = document.getElementById('market-search-input');
+      const clearBtn = document.getElementById('market-search-clear');
+      currentSearch = (input.value || '').trim().toLowerCase();
+
+      if (clearBtn) {
+        if (currentSearch) clearBtn.classList.remove('hidden');
+        else clearBtn.classList.add('hidden');
+      }
+
+      renderMarketDishes();
+    }
+
+    function clearMarketSearch() {
+      const input = document.getElementById('market-search-input');
+      if (input) input.value = '';
+      filterMarketDishes();
+    }
+
+    // رسم شبكة الأصناف
+    function renderMarketDishes() {
+      const grid = document.getElementById('market-dishes-grid');
+      const countBadge = document.getElementById('market-dishes-count-badge');
+      if (!grid) return;
+
+      const filtered = platformDishes.filter(d => {
+        if (d.isActive === false) return false;
+        if (currentRestFilter !== 'all' && d.restaurantId !== currentRestFilter) return false;
+        if (currentCatFilter !== 'all' && d.categoryId !== currentCatFilter) return false;
+        if (currentSpecialFilter === 'offers') {
+          const isOff = (d.oldPrice && d.oldPrice > d.platformPrice) || d.isOffer || (d.commissionAmount && d.commissionAmount > 0);
+          if (!isOff) return false;
+        } else if (currentSpecialFilter === 'free_delivery') {
+          if (!d.freeDelivery) return false;
+        }
+        if (currentSearch) {
+          const matchName = (d.name || '').toLowerCase().includes(currentSearch);
+          const matchRest = (d.restaurantName || '').toLowerCase().includes(currentSearch);
+          const matchDesc = (d.description || '').toLowerCase().includes(currentSearch);
+          if (!matchName && !matchRest && !matchDesc) return false;
+        }
+        return true;
+      });
+
+      if (countBadge) countBadge.textContent = `${filtered.length} صنف متاح`;
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full py-16 text-center bg-slate-900/60 border border-slate-800 rounded-3xl p-8 space-y-3">
+            <div class="text-4xl">🔍</div>
+            <h4 class="text-base font-bold text-white">لم يتم العثور على أطباق مطابقة للبحث</h4>
+            <p class="text-xs text-slate-400">جرب البحث بكلمة أخرى أو قم بإلغاء الفلترة لعرض كافة الأصناف</p>
+            <button onclick="resetAllFilters()" class="mt-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition">
+              🔄 استعراض كافة الأصناف
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = filtered.map(dish => {
+        const restStatus = restaurantStatusMap[dish.restaurantId];
+        const isRestClosed = restStatus && restStatus.isActive === false;
+        const isSoldOut = (dish.isActive === false || dish.is_available === false || dish.available === false || dish.status === 'out_of_stock');
+        const isUnavailable = isSoldOut || isRestClosed;
+        const inCartItem = marketCart.find(c => c.id === dish.id);
+                const qty = inCartItem ? inCartItem.quantity : 0;
+        const commAmt = dish.commissionAmount || (dish.platformPrice - (dish.originPrice || dish.platformPrice * 0.9));
+        const commPct = Math.round((commAmt / (dish.platformPrice || 1)) * 100);
+        const restSharePct = 100 - commPct;
+
+        return `
+          <div class="market-card bg-slate-900/90 border border-slate-800 rounded-3xl overflow-hidden flex flex-col justify-between shadow-xl group ${isUnavailable ? 'opacity-65 grayscale-[35%]' : ''}">
+            
+            <!-- صورة الطبق مع شارة المطعم -->
+            <div class="relative w-full h-44 sm:h-48 overflow-hidden bg-slate-950">
+              <img src="${dish.image}" alt="${dish.name}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600'" />
+              
+              <!-- شارة المطعم الموفر -->
+              <div class="absolute top-3 right-3 bg-black/80 backdrop-blur-md border border-orange-500/40 text-orange-300 text-[11px] font-black px-2.5 py-1 rounded-xl shadow-lg flex items-center gap-1.5 cursor-pointer hover:bg-orange-600 hover:text-white transition" onclick="event.stopPropagation(); filterByRestaurant('${dish.restaurantId}')" title="استعراض قائمة هذا المطعم فقط">
+                <span>🏷️</span>
+                <span>${dish.restaurantName}</span>
+              </div>
+
+              ${isRestClosed ? `
+                <div class="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-2 text-center z-10 backdrop-blur-[2px]">
+                  <span class="text-2xl mb-1">🚪</span>
+                  <span class="bg-amber-600 text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-lg">المطعم مغلق حالياً ⏸️</span>
+                  <span class="text-[10px] text-amber-200 font-bold mt-1">${dish.restaurantName} مغلق الآن</span>
+                </div>
+              ` : isSoldOut ? `
+                <div class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center p-2 text-center z-10 backdrop-blur-[2px]">
+                  <span class="text-xl mb-1">🔒</span>
+                  <span class="bg-rose-600 text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-lg">نفد من المطعم ❌</span>
+                  <span class="text-[9px] text-slate-300 font-bold mt-0.5">غير متوفر حالياً</span>
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- معلومات الصنف -->
+            <div class="p-4 space-y-2 flex-1 flex flex-col justify-between">
+              <div>
+                <h4 class="font-extrabold text-sm sm:text-base text-white leading-snug">${dish.name}</h4>
+                ${dish.nameEn ? `<p class="text-[11px] text-slate-400 font-medium" dir="ltr">${dish.nameEn}</p>` : ''}
+                <p class="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">${dish.description || ''}</p>
+              </div>
+
+              <!-- السعر والتحكم بالكمية -->
+              <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                <div>
+                  <div class="text-[10px] text-slate-400 font-bold">سعر المنصة المعتمد:</div>
+                  <div class="flex items-center gap-1.5 mb-1">
+                    <span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-black px-1.5 py-0.5 rounded-md font-mono" title="حصة المطعم المعتمدة">% حصة المطعم</span>
+                    <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-md font-mono" title="عمولة المنصة">% بنان</span>
+                  </div>
+                  <div class="text-base sm:text-lg font-black text-orange-400 font-mono leading-none">
+                    ${dish.platformPrice.toLocaleString()} <span class="text-xs text-slate-300 font-sans">د.ع</span>
+                  </div>
+                </div>
+
+                <!-- زر الإضافة أو التحكم بالكمية -->
+                ${isRestClosed ? `
+                  <button disabled class="py-2 px-3 bg-slate-950 border border-amber-900/60 text-amber-400 font-bold text-xs rounded-xl cursor-not-allowed opacity-75 flex items-center gap-1">
+                    <span>🚪</span>
+                    <span>المطعم مغلق</span>
+                  </button>
+                ` : isSoldOut ? `
+                  <button disabled class="py-2 px-3 bg-slate-950 border border-slate-800 text-slate-500 font-bold text-xs rounded-xl cursor-not-allowed opacity-70 flex items-center gap-1">
+                    <span>❌</span>
+                    <span>نفد الصنف</span>
+                  </button>
+                ` : qty === 0 ? `
+                  <button onclick="addToMarketCart('${dish.id}')" class="py-2 px-3.5 bg-orange-600 hover:bg-orange-500 text-white font-black text-xs rounded-xl shadow-lg shadow-orange-600/30 transition flex items-center gap-1.5 active:scale-95">
+                    <span>➕ أضف للطلب</span>
+                  </button>
+                ` : `
+                  <div class="flex items-center gap-1.5 bg-slate-950 border border-orange-500/40 rounded-xl p-1">
+                    <button onclick="updateCartQuantity('${dish.id}', -1)" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-600 text-white font-bold flex items-center justify-center transition">－</button>
+                    <span class="w-6 text-center font-black text-xs font-mono text-orange-400">${qty}</span>
+                    <button onclick="updateCartQuantity('${dish.id}', 1)" class="w-7 h-7 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold flex items-center justify-center transition">＋</button>
+                  </div>
+                `}
+              </div>
+            </div>
+
+          </div>
+        `;
+      }).join('');
+    }
+
+    function resetAllFilters() {
+      currentRestFilter = 'all';
+      currentCatFilter = 'all';
+      currentSearch = '';
+      const input = document.getElementById('market-search-input');
+      if (input) input.value = '';
+      renderRestaurantChips();
+      document.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
+      const bRest = document.getElementById('rest-chip-all');
+      const bCat = document.getElementById('cat-chip-all');
+      if (bRest) bRest.classList.add('active');
+      if (bCat) bCat.classList.add('active');
+      renderMarketDishes();
+    }
+
+    // ==========================================
+    // إدارة سلة مشتريات المنصة (Shopping Cart)
+    // ==========================================
+    function addToMarketCart(dishId) {
+      const dish = platformDishes.find(d => d.id === dishId);
+      if (!dish) return;
+
+      // حصر السلة ضمن المطعم الواحد لتجنب أجور نقل مضاعفة على الزبون
+      if (marketCart.length > 0) {
+        const firstItem = marketCart[0];
+        if (dish.restaurantId && firstItem.restaurantId && dish.restaurantId !== firstItem.restaurantId) {
+          const currentRestName = firstItem.restaurantName || 'مطعم آخر';
+          const newRestName = dish.restaurantName || 'هذا المطعم';
+          
+          const confirmSwitch = confirm(
+            '⚠️ تنبيه بخصوص رسوم التوصيل:\n\n' +
+            'سلتك الحالية تحتوي على وجبات من \"' + currentRestName + '\".\n' +
+            'لتفادي دفع أجور نقل وتوصيل إضافية من موقعين مختلفين، يقتصر كل طلب على مطعم واحد فقط.\n\n' +
+            'هل ترغب بإفراغ السلة والبدء بالطلب من \"' + newRestName + '\"؟'
+          );
+          
+          if (confirmSwitch) {
+            marketCart = [];
+          } else {
+            return;
+          }
+        }
+      }
+
+      const existing = marketCart.find(c => c.id === dishId);
+      if (existing) {
+        existing.quantity += 1;
+      } else {
+        marketCart.push({
+          id: dish.id,
+          name: dish.name,
+          restaurantId: dish.restaurantId,
+          restaurantName: dish.restaurantName,
+          price: dish.platformPrice,
+          originalPrice: dish.originalPrice,
+          commissionType: dish.commissionType,
+          commissionValue: dish.commissionValue,
+          commissionAmount: dish.commissionAmount || (dish.platformPrice - dish.originalPrice),
+          restaurantNet: dish.restaurantNet || dish.originalPrice,
+          quantity: 1,
+          image: dish.image
+        });
+      }
+
+      saveCartToStorage();
+      renderMarketDishes();
+      updateCartUI();
+    }
+
+    function updateCartQuantity(dishId, delta) {
+      const item = marketCart.find(c => c.id === dishId);
+      if (!item) return;
+
+      item.quantity += delta;
+      if (item.quantity <= 0) {
+        marketCart = marketCart.filter(c => c.id !== dishId);
+      }
+
+      saveCartToStorage();
+      renderMarketDishes();
+      updateCartUI();
+      renderCartItems();
+    }
+
+    function saveCartToStorage() {
+      try {
+        sessionStorage.setItem('smart_emenu_market_cart', JSON.stringify(marketCart));
+      } catch(e){}
+    }
+
+    function loadCartFromStorage() {
+      try {
+        const s = sessionStorage.getItem('smart_emenu_market_cart');
+        if (s) marketCart = JSON.parse(s);
+      } catch(e){}
+      updateCartUI();
+    }
+
+    function updateCartUI() {
+      const totalCount = marketCart.reduce((sum, i) => sum + i.quantity, 0);
+      const totalPrice = marketCart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+
+      const countBadge = document.getElementById('market-cart-count');
+      const totalText = document.getElementById('market-cart-total');
+      const subTotal = document.getElementById('market-cart-subtotal');
+      const finalTotal = document.getElementById('market-cart-final-total');
+
+      if (countBadge) countBadge.textContent = totalCount;
+      if (totalText) totalText.textContent = `${totalPrice.toLocaleString()} د.ع`;
+      if (subTotal) subTotal.textContent = `${totalPrice.toLocaleString()} د.ع`;
+      if (finalTotal) finalTotal.textContent = `${totalPrice.toLocaleString()} د.ع`;
+    }
+
+    function openMarketCart() {
+      renderCartItems();
+      const drawer = document.getElementById('market-cart-drawer');
+      if (drawer) drawer.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeMarketCart() {
+      const drawer = document.getElementById('market-cart-drawer');
+      if (drawer) drawer.classList.add('hidden');
+      document.body.style.overflow = 'auto';
+    }
+
+    function renderCartItems() {
+      const container = document.getElementById('market-cart-items-container');
+      if (!container) return;
+
+      if (marketCart.length === 0) {
+        container.innerHTML = `
+          <div class="py-12 text-center text-slate-400 space-y-2">
+            <div class="text-4xl">🛒</div>
+            <div class="text-sm font-bold text-white">سلة الطلبات فارغة حالياً</div>
+            <p class="text-xs text-slate-500">تصفح أصناف المنصة وأضف وجباتك المفضلة لبدء الطلب</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = marketCart.map(item => {
+        return `
+          <div class="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between gap-3 shadow-md">
+            <div class="flex items-center gap-3 min-w-0">
+              <img src="${item.image}" class="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-800" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600'" />
+              <div class="min-w-0">
+                <h5 class="text-xs font-bold text-white truncate">${item.name}</h5>
+                <div class="text-[10px] text-orange-400 flex items-center gap-1 font-bold">
+                  <span>🏷️ ${item.restaurantName}</span>
+                </div>
+                <div class="text-xs font-black font-mono text-slate-300 mt-0.5">${item.price.toLocaleString()} د.ع</div>
+              </div>
+            </div>
+
+            <!-- التحكم بالكمية -->
+            <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl p-1 shrink-0">
+              <button onclick="updateCartQuantity('${item.id}', -1)" class="w-6 h-6 rounded-lg bg-slate-800 hover:bg-rose-600 text-white font-bold text-xs flex items-center justify-center transition">－</button>
+              <span class="w-5 text-center font-black text-xs font-mono text-white">${item.quantity}</span>
+              <button onclick="updateCartQuantity('${item.id}', 1)" class="w-6 h-6 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center justify-center transition">＋</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleMarketAddressField() {
+      const type = document.getElementById('market-order-type').value;
+      const wrap = document.getElementById('market-order-address-wrapper');
+      if (wrap) {
+        if (type === 'takeaway') wrap.classList.add('hidden');
+        else wrap.classList.remove('hidden');
+      }
+    }
+
+    // ==========================================
+    // تأكيد وإرسال طلب المنصة (Submit Order)
+    // ==========================================
+    async function submitMarketOrder() {
+      if (marketCart.length === 0) {
+        alert("سلة الطلبات فارغة! يرجى إضافة أصناف قبل إتمام الطلب.");
+        return;
+      }
+
+      const name = (document.getElementById('market-order-customer-name').value || '').trim();
+      const phone = (document.getElementById('market-order-customer-phone').value || '').trim();
+      const orderType = document.getElementById('market-order-type').value;
+      const address = (document.getElementById('market-order-customer-address').value || '').trim();
+      const notes = (document.getElementById('market-order-notes').value || '').trim();
+
+      if (!name) {
+        alert("يرجى إدخال اسم الزبون الكريم.");
+        document.getElementById('market-order-customer-name').focus();
+        return;
+      }
+
+      if (!phone || phone.length < 9) {
+        alert("يرجى إدخال رقم هاتف صحيح للتواصل.");
+        document.getElementById('market-order-customer-phone').focus();
+        return;
+      }
+
+      if (orderType === 'delivery' && !address) {
+        alert("يرجى إدخال عنوان التوصيل بالتفصيل.");
+        document.getElementById('market-order-customer-address').focus();
+        return;
+      }
+
+      const btn = document.getElementById('market-submit-order-btn');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin">⏳</span> جارِ تأكيد وحفظ الطلب...`;
+
+      const orderId = 'BN-' + Math.floor(100000 + Math.random() * 900000);
+      const totalPrice = marketCart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+      const totalCommission = marketCart.reduce((sum, i) => sum + ((i.commissionAmount || 0) * i.quantity), 0);
+      const totalRestaurantNet = totalPrice - totalCommission;
+
+      // 1. تجميع وتوزيع الأصناف حسب المطاعم المعنية لإرسال الطلب مباشرة إلى شاشة كاشير كل مطعم
+      const restGroups = {};
+      marketCart.forEach(item => {
+        const rId = item.restaurantId || 'general';
+        if (!restGroups[rId]) restGroups[rId] = [];
+        restGroups[rId].push(item);
+      });
+
+      const client = getSupabase();
+      const dispatchedOrderIds = [];
+
+      // إرسال طلب مستقل لكل مطعم يظهر مباشرة في كاشير المطعم
+      for (const rId of Object.keys(restGroups)) {
+        const itemsForRest = restGroups[rId];
+        const subTotal = itemsForRest.reduce((s, it) => s + (it.price * it.quantity), 0);
+        const subCommission = itemsForRest.reduce((s, it) => s + ((it.commissionAmount || 0) * it.quantity), 0);
+        const subNet = subTotal - subCommission;
+        const restSubOrderId = `${orderId}-${rId.substring(0, 3).toUpperCase()}`;
+
+        const restOrderPayload = {
+          id: restSubOrderId,
+          restaurant_id: rId,
+          type: orderType,
+          customer_name: name,
+          customer_phone: phone,
+          customer_address: address,
+          notes: notes ? `${notes} (وارد عبر منصة بنان)` : 'طلب مباشر وارد عبر منصة بنان',
+          total: subTotal,
+          currency: 'د.ع',
+          status: 'pending_cashier', // يظهر مباشرة في كاشير المطعم بانتظار الموافقة الفورية
+          source: 'banan_platform',
+          items: itemsForRest.map(item => ({
+            id: item.id,
+            name: item.name,
+            restaurantId: rId,
+            restaurantName: item.restaurantName,
+            quantity: item.quantity,
+            price: item.price, // سعر بيع المنصة للزبون
+            originalPrice: item.originalPrice, // سعر المطعم الأصلي
+            commissionAmount: item.commissionAmount, // عمولة منصة بنان
+            restaurantNet: item.restaurantNet, // صافي المطعم
+            itemTotal: item.price * item.quantity,
+            itemCommissionTotal: (item.commissionAmount || 0) * item.quantity,
+            origin_platform: 'banan'
+          }))
+        };
+
+        dispatchedOrderIds.push(restSubOrderId);
+
+        // إرسال سحابي للمطعم
+        if (client) {
+          try {
+            await client.from('restaurant_orders').insert([restOrderPayload]);
+          } catch(e) {
+            console.warn(`Notice: Cloud order dispatch to ${rId}:`, e);
+          }
+        }
+
+        // حفظ محلي للمطعم لضمان الظهور حتى عند انقطاع الشبكة
+        try {
+          const restStorageKey = `smart_emenu_${rId}_orders`;
+          const existingRestOrders = JSON.parse(localStorage.getItem(restStorageKey) || '[]');
+          existingRestOrders.unshift(restOrderPayload);
+          localStorage.setItem(restStorageKey, JSON.stringify(existingRestOrders));
+        } catch(e){}
+      }
+
+      // 2. حفظ سجل المنصة الرئيسي الموحد لمنصة بنان
+      const masterPlatformOrder = {
+        id: orderId,
+        restaurant_id: 'banan',
+        type: orderType,
+        customer_name: name,
+        customer_phone: phone,
+        customer_address: address,
+        notes: notes,
+        total: totalPrice,
+        currency: 'د.ع',
+        status: 'pending_platform',
+        source: 'banan_platform',
+        items: marketCart.map(item => ({
+          id: item.id,
+          name: item.name,
+          restaurantId: item.restaurantId,
+          restaurantName: item.restaurantName,
+          quantity: item.quantity,
+          price: item.price,
+          originalPrice: item.originalPrice,
+          commissionAmount: item.commissionAmount,
+          restaurantNet: item.restaurantNet,
+          itemTotal: item.price * item.quantity,
+          itemCommissionTotal: (item.commissionAmount || 0) * item.quantity
+        }))
+      };
+
+      if (client) {
+        try {
+          await client.from('restaurant_orders').insert([masterPlatformOrder]);
+        } catch(e) {
+          // محاولة احتياطية مع platform_market إن لم يوجد بنان
+          try {
+            const fallbackOrder = { ...masterPlatformOrder, restaurant_id: 'platform_market' };
+            await client.from('restaurant_orders').insert([fallbackOrder]);
+          } catch(e2){}
+        }
+      }
+
+      try {
+        const histKey = 'smart_emenu_platform_orders_history';
+        const existingHist = JSON.parse(localStorage.getItem(histKey) || '[]');
+        existingHist.unshift(masterPlatformOrder);
+        localStorage.setItem(histKey, JSON.stringify(existingHist));
+      } catch(e){}
+
+      // 3. تجهيز نص رسالة الواتساب لمنصة بنان
+      let waMsg = `*طلب جديد عبر منصة بنان الذكية ✨*\n`;
+      waMsg += `🔢 رقم الطلب: ${orderId}\n`;
+      waMsg += `👤 اسم الزبون: ${name}\n`;
+      waMsg += `📱 هاتف: ${phone}\n`;
+      waMsg += `🛵 طريقة الاستلام: ${orderType === 'delivery' ? 'توصيل للعنوان' : 'استلام من المطعم'}\n`;
+      if (address) waMsg += `📍 العنوان: ${address}\n`;
+      if (notes) waMsg += `📝 ملاحظات: ${notes}\n`;
+      waMsg += `-----------------------------\n`;
+      waMsg += `📋 الأصناف المطلوبة:\n`;
+
+      marketCart.forEach((item, idx) => {
+        waMsg += `${idx + 1}. ${item.name} × ${item.quantity} [${item.restaurantName}] = ${(item.price * item.quantity).toLocaleString()} د.ع\n`;
+      });
+
+      waMsg += `-----------------------------\n`;
+      waMsg += `💰 المجموع الإجمالي: ${totalPrice.toLocaleString()} د.ع\n`;
+      waMsg += `✨ تم إرسال الطلب آلياً إلى كاشير المطعم مباشرة!\n`;
+      waMsg += `شكراً لطلبكم عبر منصة بنان الرقمية ✨`;
+
+      const platformSupportPhone = "9647702265652";
+      const waUrl = `https://wa.me/${platformSupportPhone}?text=${encodeURIComponent(waMsg)}`;
+
+      // تفريغ السلة
+      marketCart = [];
+      saveCartToStorage();
+      updateCartUI();
+      closeMarketCart();
+
+      btn.disabled = false;
+      btn.innerHTML = `<span>🚀 تأكيد وإرسال الطلب الآن</span>`;
+
+      // فتح نافذة النجاح
+      document.getElementById('success-order-id').textContent = orderId;
+      document.getElementById('success-order-total').textContent = `${totalPrice.toLocaleString()} د.ع`;
+      document.getElementById('success-order-type').textContent = orderType === 'delivery' ? 'توصيل للعنوان' : 'استلام مباشر';
+      document.getElementById('success-whatsapp-btn').href = waUrl;
+      document.getElementById('market-success-modal').classList.remove('hidden');
+    }
+
+    function closeSuccessModal() {
+      document.getElementById('market-success-modal').classList.add('hidden');
+      renderMarketDishes();
+    }
+  </script>
+</body>
+</html>

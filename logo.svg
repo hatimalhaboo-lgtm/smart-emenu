@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 160" width="100%" height="100%">
+  <defs>
+    <linearGradient id="flameGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#ea580c"/>
+      <stop offset="50%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+    <linearGradient id="darkBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background Pill (Optional / Transparent by default) -->
+  <rect width="100%" height="100%" rx="24" fill="none"/>
+  
+  <!-- Central Stylized Cross Line -->
+  <line x1="20" y1="80" x2="380" y2="80" stroke="#334155" stroke-width="4" stroke-linecap="round"/>
+  
+  <!-- Main Badge Container for FAHMA -->
+  <g transform="translate(110, 20)">
+    <!-- Flame on Top of Faa letter -->
+    <path d="M 38 12 C 34 2, 42 -8, 48 -14 C 54 -4, 62 -2, 60 12 C 58 10, 52 4, 48 8 C 45 4, 41 8, 38 12 Z" fill="url(#flameGrad)">
+      <animate attributeName="d" dur="2s" repeatCount="indefinite" values="
+        M 38 12 C 34 2, 42 -8, 48 -14 C 54 -4, 62 -2, 60 12 C 58 10, 52 4, 48 8 C 45 4, 41 8, 38 12 Z;
+        M 38 12 C 32 0, 40 -12, 49 -16 C 56 -6, 64 0, 60 12 C 57 8, 51 2, 47 7 C 43 3, 40 7, 38 12 Z;
+        M 38 12 C 34 2, 42 -8, 48 -14 C 54 -4, 62 -2, 60 12 C 58 10, 52 4, 48 8 C 45 4, 41 8, 38 12 Z
+      "/>
+    </path>
+    <path d="M 44 10 C 42 4, 46 -2, 49 -6 C 52 -1, 55 2, 54 10 C 52 8, 48 5, 46 8 Z" fill="#fef08a"/>
+    <rect x="70" y="2" width="14" height="12" rx="3" fill="#f97316"/>
+
+    <!-- Main Block Box -->
+    <rect x="0" y="14" width="180" height="72" rx="14" fill="#18181b" stroke="#3f3f46" stroke-width="3"/>
+    
+    <!-- Stylized Arabic Calligraphy for FAHMA (فحمة) -->
+    <!-- ف letter loop -->
+    <rect x="22" y="28" width="28" height="44" rx="7" fill="none" stroke="#f8fafc" stroke-width="8"/>
+    <!-- Dot on Faa -->
+    <rect x="32" y="20" width="8" height="8" rx="2" fill="#f97316"/>
+    <!-- ح letter teeth -->
+    <rect x="62" y="32" width="20" height="40" rx="6" fill="none" stroke="#f8fafc" stroke-width="7"/>
+    <!-- م letter loop -->
+    <rect x="94" y="32" width="28" height="40" rx="7" fill="none" stroke="#f8fafc" stroke-width="7"/>
+    <!-- ة letter closed loop -->
+    <rect x="134" y="28" width="24" height="44" rx="7" fill="none" stroke="#f8fafc" stroke-width="8"/>
+    <!-- Double Dots on Taa Marbuta -->
+    <circle cx="140" cy="20" r="3.5" fill="#f97316"/>
+    <circle cx="152" cy="20" r="3.5" fill="#f97316"/>
+  </g>
+
+  <!-- Subtitle: و دخان (Wa Dokhan) -->
+  <g transform="translate(125, 118)">
+    <text x="75" y="24" font-family="'Cairo', 'Segoe UI', Tahoma, sans-serif" font-weight="900" font-size="26" fill="#fb923c" text-anchor="middle" letter-spacing="3">
+      و دخان
+    </text>
+    <!-- Smoke / Flame Accent -->
+    <path d="M 12 18 Q 18 10 24 18 T 36 18" fill="none" stroke="#f97316" stroke-width="3" stroke-linecap="round"/>
+    <path d="M 115 18 Q 121 10 127 18 T 139 18" fill="none" stroke="#f97316" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

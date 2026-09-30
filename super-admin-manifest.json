@@ -1,0 +1,22 @@
+{
+  "name": "لوحة السوبر أدمن — بَنان",
+  "short_name": "سوبر أدمن",
+  "description": "لوحة التحكم المركزية للمنظومة وإدارة المطاعم والمستخدمين",
+  "start_url": "super-admin.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#060911",
+  "theme_color": "#8b5cf6",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
